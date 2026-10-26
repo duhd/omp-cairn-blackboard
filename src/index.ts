@@ -243,7 +243,11 @@ export default function blackboard(pi: ExtensionAPI): void {
       } else if (action === "start") {
         try {
           // The viewer is read-only and cannot upgrade a 0.1 board; opening an existing one here (a writer) does.
-          if (existsSync(resolveDbPath())) boardFor(undefined);
+          try {
+            if (existsSync(resolveDbPath())) boardFor(undefined);
+          } catch (err) {
+            ctx.ui.notify(`could not upgrade the default board: ${err instanceof Error ? err.message : String(err)}`, "warning");
+          }
           shared.viewer ??= startViewer({ basePath: resolveDbPath(), port: Number(process.env.FACT_BOARD_PORT ?? 8799) });
           ctx.ui.notify(`fact board viewer: ${shared.viewer.url}`, "info");
         } catch (err) {
@@ -260,5 +264,8 @@ export default function blackboard(pi: ExtensionAPI): void {
     if (ctx.agent.kind !== "main") return;
     shared.viewer?.stop();
     shared.viewer = undefined;
+    // Release the SQLite handles (a held handle locks the board file on Windows); boardFor reopens on demand.
+    for (const board of shared.boards.values()) board.close();
+    shared.boards.clear();
   });
 }

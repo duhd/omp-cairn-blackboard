@@ -6,13 +6,16 @@ import { join } from "node:path";
 
 type Notify = (message: string) => void;
 type CommandHandler = (args: string, ctx: { ui: { notify: Notify } }) => Promise<void>;
+type ShutdownHandler = (event: object, ctx: { agent: { kind: string } }) => Promise<void>;
+
+const shutdowns: ShutdownHandler[] = [];
 
 const dir = mkdtempSync(join(tmpdir(), "extension-"));
 const savedEnv = { port: process.env.FACT_BOARD_PORT, db: process.env.FACT_BOARD_DB };
 afterAll(() => {
-  // The extension keeps its board connections process-wide; Windows will not delete a file that is still open.
-  const state: { boards?: Map<string, { close(): void }> } | undefined = Reflect.get(globalThis, Symbol.for("omp-cairn-blackboard.state"));
-  for (const board of state?.boards?.values() ?? []) board.close();
+  // Shutting the main session down releases the board connections, as omp does on exit; Windows will not
+  // delete a file that is still open.
+  for (const shutdown of shutdowns) void shutdown({}, { agent: { kind: "main" } });
   process.env.FACT_BOARD_PORT = savedEnv.port;
   process.env.FACT_BOARD_DB = savedEnv.db;
   if (savedEnv.port === undefined) delete process.env.FACT_BOARD_PORT;
@@ -30,15 +33,19 @@ const schema: object = new Proxy(() => schema, { get: () => schema });
 async function loadInstance(tag: string): Promise<{ module: object; command: CommandHandler }> {
   const module = await import(`${join(import.meta.dir, "..", "src", "index.ts")}?instance=${tag}`);
   let command: CommandHandler | undefined;
+  let shutdown: ShutdownHandler | undefined;
   const pi = {
     zod: schema,
     registerTool() {},
     registerCommand(_name: string, options: { handler: CommandHandler }) {
       command = options.handler;
     },
-    on() {},
+    on(event: string, handler: ShutdownHandler) {
+      if (event === "session_shutdown") shutdown = handler;
+    },
   };
   module.default(pi as never);
+  if (shutdown) shutdowns.push(shutdown);
   if (!command) throw new Error("extension did not register /fact-board");
   return { module, command };
 }

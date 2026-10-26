@@ -14,7 +14,7 @@ The package ships four pieces:
 
 ```
 omp tool call ─► src/index.ts  (adapter: zod params, snake_case → camelCase, run() error mapping)
-                   │ boardFor(project) → cached Board per file path (module-level Map)
+                   │ boardFor(project) → one Board per file path, kept on globalThis (omp loads each session/subagent as its own module instance)
                    ▼
                src/board.ts    (ALL domain rules; sole SQLite writer; synchronous)
                    │ bun:sqlite, WAL
@@ -47,7 +47,7 @@ src/redact.ts ── shared regex rules ──► board.ts (redact before store)
 ## Development Commands
 
 ```bash
-bun test                                   # full suite (~3 s, 2 files)
+bun test                                   # full suite (~5 s, 3 files)
 bun test -t "lease"                        # filter by test name
 bun src/viewer.ts                          # standalone viewer (FACT_BOARD_PORT, FACT_BOARD_DB)
 omp plugin link ./omp-cairn-blackboard     # dev install (junction on Windows)
@@ -77,7 +77,7 @@ omp plugin features omp-cairn-blackboard --enable=redact-output
 | File | Why it matters |
 |---|---|
 | `src/board.ts` | Schema, migration, path/project resolution, every invariant. Its header comment is the canonical rule list, so keep it in sync |
-| `src/index.ts` | 16 `registerTool` calls, the `/fact-board` command, and a `session_shutdown` handler that stops the viewer only for the main agent |
+| `src/index.ts` | 16 `registerTool` calls, the `/fact-board` command (start also upgrades an existing default board), and a `session_shutdown` handler that, for the main agent only, stops the viewer and closes the board connections. Viewer handle and boards live on `globalThis` so any module instance can stop what another started |
 | `src/viewer.ts` | `startViewer` checks method, loopback and `Host`. The page renders board text with `textContent` / SVG text nodes only and must never use `innerHTML` |
 | `src/graph.ts` | `buildGraph(snapshot, now)` returns nodes, edges and size for the Graph tab. Cycles are handled as back edges, so keep it pure |
 | `package.json` | `omp.extensions`, `omp.features["redact-output"]` (`default: false`), `files` (excludes `test/`) |
@@ -104,7 +104,7 @@ omp plugin features omp-cairn-blackboard --enable=redact-output
   - `expectRule(fn, message)`: asserts a `BoardError` with that message
 - Spawn-based tests (WAL lock, claim race) need a `30_000` ms timeout; spawning Bun is slow on Windows.
 - **Credential-shaped fixtures are built at runtime**, e.g. ``` `${"AKIA"}${"B".repeat(16)}` ```. Never commit literal secrets. The host's secret obfuscator also masks such literals in tool output, so what you read may differ from what is on disk.
-- **Coverage gap:** `src/index.ts` wiring (tool registration, `run()` mapping) has no unit tests. Smoke-test it by importing the factory with a stub `pi`, then prove the real path with a restarted omp session plus a pair of `task` subagents.
+- **Coverage gap:** tool registration and `run()` mapping have no unit tests; `test/extension.test.ts` covers the `/fact-board` command and shutdown through a stub `pi` loaded as separate module instances. Prove the real tool path with a restarted omp session plus a pair of `task` subagents.
 
 ## Security Invariants (do not regress)
 
