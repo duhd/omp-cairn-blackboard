@@ -8,6 +8,7 @@
  * Every tool takes an optional `project`: each project is its own board (own origin, goal and graph).
  */
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { existsSync } from "node:fs";
 import { Board, BoardError, parseIdList, resolveDbPath } from "./board";
 import { startViewer } from "./viewer";
 import type { ViewerHandle } from "./viewer";
@@ -241,6 +242,8 @@ export default function blackboard(pi: ExtensionAPI): void {
         }
       } else if (action === "start") {
         try {
+          // The viewer is read-only and cannot upgrade a 0.1 board; opening an existing one here (a writer) does.
+          if (existsSync(resolveDbPath())) boardFor(undefined);
           shared.viewer ??= startViewer({ basePath: resolveDbPath(), port: Number(process.env.FACT_BOARD_PORT ?? 8799) });
           ctx.ui.notify(`fact board viewer: ${shared.viewer.url}`, "info");
         } catch (err) {
