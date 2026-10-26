@@ -27,10 +27,15 @@ function boardPayload(basePath: string, project: string | null) {
     // One row past the limit is read only to tell "exactly at the limit" apart from "older rows exist".
     const read = readSnapshot(path, SNAPSHOT_LIMIT + 1);
     if ("missing" in read) return { ...base, dbPath: path, note: "board not created yet" };
+    if ("legacy" in read) {
+      return { ...base, dbPath: path, note: "this board uses the 0.1 format; it is upgraded the first time a board tool (e.g. board_init) opens it" };
+    }
     // Older nodes, and edges into them, are absent from list and graph when this is set.
-    const truncated = read.facts.length > SNAPSHOT_LIMIT || read.intents.length > SNAPSHOT_LIMIT || read.hints.length > SNAPSHOT_LIMIT;
+    const truncated = read.facts.length > SNAPSHOT_LIMIT || read.intents.length > SNAPSHOT_LIMIT;
+    // The graph does not draw hints, so their overflow is reported separately, for the list only.
+    const hintsTruncated = read.hints.length > SNAPSHOT_LIMIT;
     const snapshot = { board: read.board, facts: read.facts.slice(0, SNAPSHOT_LIMIT), intents: read.intents.slice(0, SNAPSHOT_LIMIT), hints: read.hints.slice(0, SNAPSHOT_LIMIT) };
-    return { ...base, dbPath: path, ...snapshot, truncated, limit: SNAPSHOT_LIMIT, graph: buildGraph(snapshot, now) };
+    return { ...base, dbPath: path, ...snapshot, truncated, hintsTruncated, limit: SNAPSHOT_LIMIT, graph: buildGraph(snapshot, now) };
   } catch (err) {
     return { ...base, note: `read failed: ${err instanceof Error ? err.message : String(err)}` };
   }
@@ -99,7 +104,7 @@ section{margin-bottom:22px}h2{font-size:13px;text-transform:uppercase;letter-spa
 .gnode.intent.open rect{stroke:var(--acc)}
 .gnode.intent.claimed rect{stroke:var(--ok);fill:color-mix(in srgb,var(--ok) 10%,var(--card))}
 .gnode.intent.concluded rect{stroke:var(--mut)}
-.gnode.stale rect{stroke:var(--bad);stroke-dasharray:3 3}
+.gnode.stale rect,.gnode.intent.claimed.stale rect{stroke:var(--bad);stroke-dasharray:3 3}
 .gnode.hl rect{stroke-width:4}
 .gnode.dim{opacity:.18}
 </style></head><body>
@@ -230,7 +235,7 @@ function renderGraph(d) {
   var sig = JSON.stringify([graph.nodes.map(function (n) { return [n.id, n.status, n.stale, n.owner, n.x, n.y]; }), graph.edges]);
   if (sig !== gs.sig) { drawGraph(graph); gs.sig = sig; }
   applyFilter(graph);
-  meta.textContent = (d.truncated ? "PARTIAL: only the newest " + d.limit + " facts/intents, older nodes and their edges are hidden · " : "")
+  meta.textContent = (d.truncated ? "PARTIAL: only the newest " + d.limit + " facts and " + d.limit + " intents; older nodes and their edges are hidden · " : "")
     + graph.nodes.length + " nodes · " + graph.edges.length + " edges · scroll to zoom, drag to pan, click a fact or intent to open its card";
 }
 
@@ -338,7 +343,8 @@ function render() {
   renderProjects(d);
   renderBanner(d);
   if (state.view === "graph") renderGraph(d); else renderList(d);
-  document.getElementById("meta").textContent = (d.truncated ? "partial view (newest " + d.limit + ") · " : "") + (d.dbPath || "") + " · updated " + new Date(d.now).toLocaleTimeString();
+  var partial = d.truncated || (state.view === "list" && d.hintsTruncated);
+  document.getElementById("meta").textContent = (partial ? "partial view (newest " + d.limit + ") · " : "") + (d.dbPath || "") + " · updated " + new Date(d.now).toLocaleTimeString();
 }
 function renderProjects(d) {
   var sel = document.getElementById("project");

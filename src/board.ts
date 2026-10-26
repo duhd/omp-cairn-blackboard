@@ -753,12 +753,20 @@ export function snapshotFrom(db: Database, limit: number, leaseMs = envNumber("F
   return { board: infoFrom(db), facts, intents, hints };
 }
 
-/** Read-only snapshot straight from the file; never writes, so it is safe while omp is running or closed. */
-export function readSnapshot(dbPath: string, limit = 500): Snapshot | { missing: true } {
+/**
+ * Read-only snapshot straight from the file; never writes, so it is safe while omp is running or closed.
+ * A board still in the 0.1 format has no graph tables and cannot be read without upgrading it, which only
+ * a writer may do (the first board tool call opens it as a `Board`); it is reported as `legacy`.
+ */
+export function readSnapshot(dbPath: string, limit = 500): Snapshot | { missing: true } | { legacy: true } {
   if (!existsSync(dbPath)) return { missing: true };
   const db = new Database(dbPath, { readonly: true });
   try {
     db.exec("PRAGMA busy_timeout = 2000");
+    const graphTables = db
+      .query<{ n: number }, []>("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('meta', 'intent_sources')")
+      .get();
+    if (graphTables?.n !== 2) return { legacy: true };
     return snapshotFrom(db, limit, envNumber("FACT_BOARD_LEASE_SECONDS", 900) * 1000);
   } finally {
     db.close();

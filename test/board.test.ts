@@ -371,6 +371,29 @@ describe("storage", () => {
     expect(board.concludeIntent({ id: "old", leaseToken: claimed.lease_token, fact: "migrated" }).intent.to_fact_id).toBeTruthy();
   });
 
+  test("the viewer reports a not-yet-migrated 0.1 board instead of failing, and reads it once a writer upgrades it", async () => {
+    const base = join(tempDir("blackboard-legacy-view-"), "fact-board.db");
+    const legacy = new Database(base, { create: true });
+    legacy.exec(`CREATE TABLE facts (id TEXT PRIMARY KEY, text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'claimed',
+      claimed_by TEXT, evidence TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE intents (id TEXT PRIMARY KEY, description TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+      claimed_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE hints (id TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER NOT NULL);`);
+    legacy.close();
+    expect(readSnapshot(base)).toEqual({ legacy: true });
+    const viewer = startViewer({ basePath: base, port: 0 });
+    try {
+      const before = await (await fetch(`${viewer.url}/api/board`)).json();
+      expect(before.note).toContain("0.1 format");
+      expect(before.graph).toBeUndefined();
+      newBoard({}, base).init({ origin: "o", goal: "g" });
+      const after = await (await fetch(`${viewer.url}/api/board`)).json();
+      expect([after.note, after.board.goal]).toEqual([undefined, "g"]);
+    } finally {
+      viewer.stop();
+    }
+  });
+
   test("a viewer-style polling reader in another process never makes a write fail", async () => {
     const dir = tempDir("blackboard-lock-");
     const dbPath = join(dir, "board.db");
@@ -410,7 +433,7 @@ describe("storage", () => {
     writer.claimFact({ text: "survives shutdown" });
     writer.close();
     const snapshot = readSnapshot(path);
-    if ("missing" in snapshot) throw new Error("board vanished");
+    if ("missing" in snapshot || "legacy" in snapshot) throw new Error("board vanished");
     expect(snapshot.facts.map(f => f.text)).toEqual(["survives shutdown"]);
     expect(snapshot.board.goal).toBe("g");
   });
@@ -433,6 +456,7 @@ describe("redaction", () => {
     ["aws access key id", `key id ${awsKeyId} here`, "key id [REDACTED] here"],
     ["github token", `pushed with ${githubToken}`, "pushed with [REDACTED]"],
     ["pem block", `before\n${pem}\nafter`, "before\n[REDACTED PRIVATE KEY]\nafter"],
+    ["two pem blocks", `${pem}\nmid\n${pem}`, "[REDACTED PRIVATE KEY]\nmid\n[REDACTED PRIVATE KEY]"],
   ])("masks: %s", (_name, input, expected) => {
     expect(redactText(input)).toBe(expected);
   });
@@ -476,6 +500,19 @@ describe("redaction", () => {
   ])("leaves ordinary text alone: %s", (_name, input) => {
     expect(redactText(input)).toBe(input);
   });
+
+  // Each shape used to be quadratic: every '-' in a long run (or every unterminated PEM header) started a
+  // scan to the end of the input. Sizes are where the old rules took several seconds (40 KB of dashes:
+  // 3.5 s; 320 KB of headers: ~3 s); a timeout cannot interrupt a synchronous regex, so the bound is asserted.
+  test.each([
+    ["a line of dashes", "-".repeat(40_000)],
+    ["dash-separated words", "a-".repeat(20_000)],
+    ["unterminated private key headers", `${dashes}BEGIN RSA PRIVATE KEY${dashes}\n`.repeat(10_000)],
+  ])("redacts pathological input in linear time: %s", (_name, input) => {
+    const started = performance.now();
+    expect(redactText(`${input} password=hunter2secret`)).toBe(`${input} password=[REDACTED]`);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
 });
 
 describe("viewer", () => {
@@ -513,11 +550,18 @@ describe("viewer", () => {
     const base = join(tempDir(), "fact-board.db");
     const board = newBoard({}, base);
     board.init({ origin: "o", goal: "g" });
-    for (let i = 0; i < 500; i++) board.claimFact({ text: `finding ${i}` });
+    for (let i = 0; i < 500; i++) {
+      board.claimFact({ text: `finding ${i}` });
+      board.writeHint(`hint ${i}`);
+    }
     const viewer = startViewer({ basePath: base, port: 0 });
     try {
       const atLimit = await (await fetch(`${viewer.url}/api/board`)).json();
-      expect([atLimit.facts.length, atLimit.truncated]).toEqual([500, false]);
+      expect([atLimit.facts.length, atLimit.truncated, atLimit.hintsTruncated]).toEqual([500, false, false]);
+      // Hint overflow alone does not hide anything the graph draws.
+      board.writeHint("hint 500");
+      const hintsOnly = await (await fetch(`${viewer.url}/api/board`)).json();
+      expect([hintsOnly.hints.length, hintsOnly.truncated, hintsOnly.hintsTruncated]).toEqual([500, false, true]);
       board.claimFact({ text: "finding 500" });
       const above = await (await fetch(`${viewer.url}/api/board`)).json();
       expect([above.facts.length, above.truncated, above.limit]).toEqual([500, true, 500]);

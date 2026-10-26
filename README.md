@@ -66,7 +66,7 @@ Ask the agent to investigate something open-ended with `cairn-search`, or drive 
 
 Use the project picker to switch boards; the URL keeps `project` and `view`. Outside omp: `bun src/viewer.ts`.
 
-The viewer reads the newest 500 facts and the newest 500 intents. On a larger board it marks the view as **partial**: older nodes, and the edges into them, are not shown. Use `board_export` for the full graph.
+The viewer reads the newest 500 facts, 500 intents and 500 hints. When older facts or intents exist, both tabs mark the view as **partial**: older nodes, and the edges into them, are not shown. When only hints overflow, just the List tab is marked, since the graph does not draw hints. Use `board_export` for the full graph.
 
 The viewer opens the database read-only, binds to `127.0.0.1` only, answers only GET/HEAD, checks the `Host` header, and renders board text (HTML and SVG) with `textContent` only.
 
