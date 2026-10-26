@@ -55,6 +55,20 @@ function run(fn: () => unknown) {
   }
 }
 
+/**
+ * What a freshly initialized board needs from the agent. The board records nothing by itself: an agent that
+ * only calls board_init leaves the graph (and the viewer) empty, so say what to do next and which `project` to pass.
+ */
+function nextSteps(project: string | undefined): string {
+  const scope = project ? ` Pass project: "${project}" on every board tool call, otherwise it writes to the default board.` : "";
+  return (
+    "The board records nothing automatically. Record each confirmed finding or finished milestone with fact_claim (text, evidence)." +
+    " To split work, take the Reason lease (reason_claim), then intent_create from \"origin\" or fact ids, and have a worker intent_claim and intent_conclude it." +
+    " Anyone can watch the graph with /fact-board." +
+    scope
+  );
+}
+
 export default function blackboard(pi: ExtensionAPI): void {
   const z = pi.zod;
   const project = z.string().optional().describe("Board name; omit for the default board. Each project is its own graph.");
@@ -62,10 +76,10 @@ export default function blackboard(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "board_init",
     description:
-      "Start a board: declare the origin (what is known) and the goal (the success condition). Required before intents. Idempotent for identical values.",
+      "Start a board: declare the origin (what is known) and the goal (the success condition). Required before intents. Idempotent for identical values. The result includes a `next` field saying how to record work on the board.",
     parameters: z.object({ origin: z.string(), goal: z.string(), project }),
     async execute(_id, params) {
-      return run(() => boardFor(params.project).init({ origin: params.origin, goal: params.goal }));
+      return run(() => ({ ...boardFor(params.project).init({ origin: params.origin, goal: params.goal }), next: nextSteps(params.project) }));
     },
   });
 

@@ -30,13 +30,18 @@ const schema: object = new Proxy(() => schema, { get: () => schema });
  * Loads the extension the way omp does: a plain path plus a cache-busting query gives each load its own
  * module instance (Bun ignores the query on file: URLs), so the import is necessarily dynamic.
  */
-async function loadInstance(tag: string): Promise<{ module: object; command: CommandHandler }> {
+type ToolDef = { name: string; execute(id: string, params: Record<string, unknown>): Promise<{ content: Array<{ text: string }> }> };
+
+async function loadInstance(tag: string): Promise<{ module: object; command: CommandHandler; tools: Record<string, ToolDef> }> {
   const module = await import(`${join(import.meta.dir, "..", "src", "index.ts")}?instance=${tag}`);
   let command: CommandHandler | undefined;
   let shutdown: ShutdownHandler | undefined;
+  const tools: Record<string, ToolDef> = {};
   const pi = {
     zod: schema,
-    registerTool() {},
+    registerTool(tool: ToolDef) {
+      tools[tool.name] = tool;
+    },
     registerCommand(_name: string, options: { handler: CommandHandler }) {
       command = options.handler;
     },
@@ -47,7 +52,7 @@ async function loadInstance(tag: string): Promise<{ module: object; command: Com
   module.default(pi as never);
   if (shutdown) shutdowns.push(shutdown);
   if (!command) throw new Error("extension did not register /fact-board");
-  return { module, command };
+  return { module, command, tools };
 }
 
 test("a viewer started from one module instance can be stopped from another", async () => {
@@ -70,6 +75,22 @@ test("a viewer started from one module instance can be stopped from another", as
   await expect(fetch(`${url}/api/board`)).rejects.toThrow();
   await a.command("stop", ctx);
   expect(notes[3]).toBe("fact board viewer is not running in this omp process");
+});
+
+test("board_init tells the agent how to record work and which project to pass", async () => {
+  process.env.FACT_BOARD_DB = join(dir, "init-board.db");
+  const { tools } = await loadInstance("init");
+  const call = async (params: Record<string, unknown>) => JSON.parse((await tools.board_init.execute("t", params)).content[0].text);
+
+  const scoped = await call({ origin: "o", goal: "g", project: "bump-1" });
+  expect(scoped.initialized).toBe(true);
+  expect(scoped.next).toContain('project: "bump-1"');
+  expect(scoped.next).toContain("fact_claim");
+  // Re-running with the same values is allowed and gives the same guidance.
+  expect((await call({ origin: "o", goal: "g", project: "bump-1" })).next).toBe(scoped.next);
+
+  const unscoped = await call({ origin: "o", goal: "g" });
+  expect(unscoped.next).not.toContain("project:");
 });
 
 test("/fact-board start upgrades an existing 0.1 board so the read-only viewer can show it", async () => {
