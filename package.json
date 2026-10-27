@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "keywords": ["omp", "oh-my-pi", "plugin", "blackboard", "multi-agent", "subagents", "fact-board", "cairn"],
-  "files": ["src", "skills", "README.md", "LICENSE"],
+  "files": ["src", "skills", "docs", "README.md", "LICENSE"],
   "scripts": {
     "test": "bun test",
     "viewer": "bun src/viewer.ts"

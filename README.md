@@ -2,6 +2,8 @@
 
 A state-space-search **blackboard** for omp (oh-my-pi). It gives parallel subagents a shared, persistent, queryable graph to coordinate through, instead of each one re-deriving the same findings. The design is inspired by [Cairn](https://github.com/oritera/Cairn)'s idea that *state is the single source of truth* and *decisions are distributed to workers*; it is an independent implementation and contains no Cairn code.
 
+![omp-cairn-blackboard overview](docs/infographic.svg)
+
 | Piece | What it is |
 |---|---|
 | **Fact board** (extension) | Seventeen tools implementing a fact–intent graph: `board_init`, `board_list`, `board_export`, `board_complete`, `board_reopen`, `fact_claim`, `fact_query`, `fact_dispute`, `reason_claim`, `reason_release`, `intent_create`, `intent_claim`, `intent_heartbeat`, `intent_conclude`, `intent_release`, `hint_write`, `hint_query`. `board_list` is how a new session finds the board of unfinished work. |
