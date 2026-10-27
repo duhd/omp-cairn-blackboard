@@ -9,7 +9,10 @@
  */
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { existsSync } from "node:fs";
-import { Board, BoardError, listBoards, parseIdList, resolveDbPath } from "./board";
+import { Board, BoardError, listBoards, parseIdList, readSnapshot, resolveDbPath } from "./board";
+import type { Snapshot } from "./board";
+import { dispatchAdvice } from "./dispatch";
+import type { Checkpoint } from "./dispatch";
 import { compactionContext, nudgeOnCall, recordToolUse } from "./session-boards";
 import type { NudgeState, SessionBoards } from "./session-boards";
 import { startViewer } from "./viewer";
@@ -26,15 +29,54 @@ interface SharedState {
   sessions: SessionBoards;
   /** Per-session activity for the in-session reminder to write to the board. */
   nudges: NudgeState;
+  /** Dispatcher checkpoints, keyed by session id and project. */
+  checkpoints: Map<string, Checkpoint>;
+  /** When the dispatcher last looked at a session's boards. */
+  lastLook: Map<string, number>;
   viewer?: ViewerHandle;
 }
 const SHARED_KEY: unique symbol = Symbol.for("omp-cairn-blackboard.state");
 const host = globalThis as typeof globalThis & { [SHARED_KEY]?: SharedState };
-const shared: SharedState = (host[SHARED_KEY] ??= { boards: new Map(), sessions: new Map(), nudges: new Map() });
-// State left on globalThis by an earlier version of this extension in the same process has no `sessions`.
+const shared: SharedState = (host[SHARED_KEY] ??= { boards: new Map(), sessions: new Map(), nudges: new Map(), checkpoints: new Map(), lastLook: new Map() });
 // State left on globalThis by an earlier version of this extension in the same process lacks these maps.
 shared.sessions ??= new Map();
 shared.nudges ??= new Map();
+shared.checkpoints ??= new Map();
+shared.lastLook ??= new Map();
+
+/** Reading a board costs a query per table, so the dispatcher looks at most this often per session. */
+const DISPATCH_LOOK_MS = 30_000;
+
+/** Advice for the boards this session uses, read from disk so work recorded by subagents is seen too. */
+function dispatchFor(sessionId: string, now: number): string[] {
+  if (now - (shared.lastLook.get(sessionId) ?? -Infinity) < DISPATCH_LOOK_MS) return [];
+  shared.lastLook.set(sessionId, now);
+  const out: string[] = [];
+  for (const project of shared.sessions.get(sessionId)?.keys() ?? []) {
+    // omp blocks the tool call when a tool_call handler throws, so a locked or damaged board must not escape:
+    // advice is optional, the agent's work is not.
+    let snap: Snapshot;
+    try {
+      const read = readSnapshot(resolveDbPath(project || undefined));
+      if (!("board" in read)) continue;
+      snap = read;
+    } catch {
+      continue;
+    }
+    if (snap.board.status !== "active") continue;
+    const key = `${sessionId}\u0000${project}`;
+    const counts = {
+      facts: snap.facts.length,
+      hints: snap.hints.length,
+      live: snap.intents.filter(i => i.status !== "concluded").length,
+      unclaimed: snap.intents.filter(i => i.status === "open").map(i => i.id),
+    };
+    const { advice, next } = dispatchAdvice(shared.checkpoints.get(key), counts, project);
+    shared.checkpoints.set(key, next);
+    if (advice) out.push(advice);
+  }
+  return out;
+}
 
 function boardFor(project: string | undefined): Board {
   const path = resolveDbPath(project);
@@ -300,8 +342,12 @@ export default function blackboard(pi: ExtensionAPI): void {
     recordToolUse(shared.sessions, sessionId, event.toolName, event.input);
     // Only the main session is nudged: a subagent's reply goes to its parent, not to a person who can act on it.
     if (ctx.agent.kind !== "main") return;
-    const nudge = nudgeOnCall(shared.nudges, sessionId, event.toolName, Date.now());
+    const now = Date.now();
+    const nudge = nudgeOnCall(shared.nudges, sessionId, event.toolName, now);
     if (nudge) pi.sendMessage({ customType: "cairn-nudge", display: true, content: nudge }, { deliverAs: "aside" });
+    for (const advice of dispatchFor(sessionId, now)) {
+      pi.sendMessage({ customType: "cairn-dispatch", display: true, content: advice }, { deliverAs: "aside" });
+    }
   });
   pi.on("session.compacting", event => {
     const context = compactionContext(shared.sessions, event.sessionId);
@@ -312,6 +358,8 @@ export default function blackboard(pi: ExtensionAPI): void {
   pi.on("session_shutdown", async (_event, ctx) => {
     shared.sessions.delete(ctx.sessionManager.getSessionId());
     shared.nudges.delete(ctx.sessionManager.getSessionId());
+    shared.lastLook.delete(ctx.sessionManager.getSessionId());
+    for (const key of [...shared.checkpoints.keys()]) if (key.startsWith(`${ctx.sessionManager.getSessionId()}\u0000`)) shared.checkpoints.delete(key);
     if (ctx.agent.kind !== "main") return;
     shared.viewer?.stop();
     shared.viewer = undefined;

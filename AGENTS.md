@@ -81,6 +81,7 @@ omp plugin features omp-cairn-blackboard --enable=redact-output
 | `src/viewer.ts` | `startViewer` checks method, loopback and `Host`. The page renders board text with `textContent` / SVG text nodes only and must never use `innerHTML` |
 | `src/graph.ts` | `buildGraph(snapshot, now)` returns nodes, edges and size for the Graph tab. Cycles are handled as back edges, so keep it pure |
 | `src/session-boards.ts` | Pure helpers behind the `tool_call` / `session.compacting` hooks in `index.ts`: `recordToolUse` notes which projects and worker names a session used, `compactionContext` turns that into the lines a compaction summary carries (board names plus a "reload with `board_export`, re-claim with the same worker name" step). Only names matching `PROJECT_NAME` / the worker pattern are kept, since they land in the summary; state lives on `globalThis` and is dropped on `session_shutdown` |
+| `src/dispatch.ts` | Pure `dispatchAdvice(checkpoint, counts, project)`: Cairn's `_reason_trigger` (facts/hints grew, last open intent concluded → Reason) plus "unclaimed open intents → Explore subagents". `dispatchFor` in `index.ts` reads boards from disk at most every 30 s per main session and must never throw (omp blocks a tool call whose `tool_call` handler throws) |
 | `package.json` | `omp.extensions`, `omp.features["redact-output"]` (`default: false`), `files` (excludes `test/`) |
 
 ## Runtime/Tooling Preferences

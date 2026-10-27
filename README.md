@@ -67,6 +67,15 @@ Compacting a session rewrites the conversation, and with it the project and work
 
 The board records nothing by itself, and an agent deep in a task can forget to create, read or write to it. To catch that, the extension watches the main session's tool calls and, when it makes **24 non-board calls without touching the board**, injects one `cairn-nudge` message that says to create the board (or `board_export` the one it is on), record milestones with `fact_claim`, and declare an intent before a system-changing step. It then waits a **10-minute cooldown** and stops after **3 nudges per session**. Any board tool — including `board_export`, `fact_query` and `board_list` — resets the counter, so reading the board does not get you nagged. Subagents are never nudged. The thresholds are constants in `src/session-boards.ts` (`NUDGE_AFTER_CALLS`, `NUDGE_COOLDOWN_MS`, `MAX_NUDGES_PER_SESSION`); there is no environment variable to turn them off yet.
 
+### Light dispatcher
+
+Cairn's dispatcher decides what runs next; inside omp only the agent can spawn subagents, so this extension advises the main session instead (`src/dispatch.ts`). At most every 30 s, on a main-session tool call, it reads each active board the session has used and compares it with its last look, using Cairn's triggers:
+
+- **open intents nobody has claimed** → one `cairn-dispatch` message asking for one `task` subagent per intent, each with its own worker name (each intent is announced once, including intents already open when a session resumes a board);
+- **more facts or hints, or the last open intent concluded** → a message asking for a Reason pass (`reason_claim`, `board_export`, then `board_complete` or `intent_create` + `reason_release`).
+
+Messages carry only counts, short intent ids and the project name, never board text. A board that cannot be read is skipped: the hook never blocks a tool call. Subagents get no advice.
+
 ## Watching the board
 
 `/fact-board` starts a read-only viewer in-process (default `http://127.0.0.1:8799`); `/fact-board stop` and `/fact-board status`. It refreshes every 2 s and has two tabs:
