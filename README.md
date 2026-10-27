@@ -61,6 +61,10 @@ Ask the agent to investigate something open-ended with `cairn-search`, or drive 
 
 Compacting a session rewrites the conversation, and with it the project and worker names the agent was using. The extension notes (per session, in process memory) which projects each session wrote to and which worker names it claimed with, and on `session.compacting` hands the summarizer one short block: the project and worker names, and a required first step: `board_export` (timeline) for each board, then `intent_claim` again with the same worker name on any intent still held, which returns the lease token. Only names that match the project/worker name rules are included, never board text. Subagents are tracked under their own session ids, so a parent's summary lists only the boards the parent itself called. This is a nudge inside the summary, not a guarantee the next turn follows it.
 
+### In-session reminder
+
+The board records nothing by itself, and an agent deep in a task can forget to create, read or write to it. To catch that, the extension watches the main session's tool calls and, when it makes **24 non-board calls without touching the board**, injects one `cairn-nudge` message that says to create the board (or `board_export` the one it is on), record milestones with `fact_claim`, and declare an intent before a system-changing step. It then waits a **10-minute cooldown** and stops after **3 nudges per session**. Any board tool — including `board_export`, `fact_query` and `board_list` — resets the counter, so reading the board does not get you nagged. Subagents are never nudged. The thresholds are constants in `src/session-boards.ts` (`NUDGE_AFTER_CALLS`, `NUDGE_COOLDOWN_MS`, `MAX_NUDGES_PER_SESSION`); there is no environment variable to turn them off yet.
+
 ## Watching the board
 
 `/fact-board` starts a read-only viewer in-process (default `http://127.0.0.1:8799`); `/fact-board stop` and `/fact-board status`. It refreshes every 2 s and has two tabs:

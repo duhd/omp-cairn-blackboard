@@ -37,8 +37,19 @@ test("a board touch resets a half-accumulated counter, so it does not trip the n
   expect(writeNudge).toBeUndefined();
   expect(calls(state, "s", "read", 6, T0 + 2)).toHaveLength(0);
 });
+test("after a write, the next full run of calls after the cooldown nudges again", () => {
+  const state: NudgeState = new Map();
+  expect(calls(state, "s", "read", NUDGE_AFTER_CALLS, T0)).toHaveLength(1);
+  nudgeOnCall(state, "s", "fact_claim", T0 + 1);
+  expect(calls(state, "s", "read", NUDGE_AFTER_CALLS, T0 + NUDGE_COOLDOWN_MS)).toHaveLength(1);
+});
 
-
+test("reading only the board list also resets the counter", () => {
+  const state: NudgeState = new Map();
+  expect(calls(state, "s", "read", NUDGE_AFTER_CALLS - 1, T0)).toHaveLength(0);
+  expect(nudgeOnCall(state, "s", "board_list", T0 + 1)).toBeUndefined();
+  expect(calls(state, "s", "read", 6, T0 + 2)).toHaveLength(0);
+});
 test("without touching the board, a second nudge waits for the cooldown", () => {
   const state: NudgeState = new Map();
   expect(calls(state, "s", "read", NUDGE_AFTER_CALLS, T0)).toHaveLength(1);
