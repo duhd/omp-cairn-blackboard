@@ -19,8 +19,15 @@ export interface ViewerHandle {
 const SNAPSHOT_LIMIT = 500;
 
 function boardPayload(basePath: string, project: string | null) {
-  const status = Object.fromEntries(listBoards(basePath).map(b => [b.project, b.status]));
-  const projects = listProjects(basePath).map(name => ({ name, status: status[name] ?? "legacy" }));
+  // A board that cannot be read must not take the whole viewer down (it polls every 2 s); an unknown status is
+  // "active" so an uninitialized or unlisted board is never hidden by mistake.
+  let status: Record<string, string> = {};
+  try {
+    status = Object.fromEntries(listBoards(basePath).map(b => [b.project, b.status]));
+  } catch {
+    status = {};
+  }
+  const projects = listProjects(basePath).map(name => ({ name, status: status[name] ?? "active" }));
   const now = Date.now();
   const base = { project, projects, now };
   try {
@@ -355,10 +362,11 @@ function renderProjects(d) {
   // Completed boards are hidden by default: they are history, not work in progress. The selected one always stays,
   // so a URL pointing at a completed board still works with the toggle off.
   var names = [""].concat((d.projects || []).filter(function (p) { return state.showDone || p.status !== "completed" || p.name === state.project; }).map(function (p) { return p.name; }));
-  if (sel.dataset.names === names.join("|") && sel.value === state.project) return;
+  var key = names.join("|") + "#" + state.showDone;
+  if (sel.dataset.names === key && sel.value === state.project) return;
   sel.replaceChildren();
   names.forEach(function (n) { var o = el("option", "", n || "(default)"); o.value = n; sel.appendChild(o); });
-  sel.value = state.project; sel.dataset.names = names.join("|");
+  sel.value = state.project; sel.dataset.names = key;
 }
 function syncUrl() {
   var p = new URLSearchParams();
