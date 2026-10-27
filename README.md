@@ -71,10 +71,10 @@ The board records nothing by itself, and an agent deep in a task can forget to c
 
 Cairn's dispatcher decides what runs next; inside omp only the agent can spawn subagents, so this extension advises the main session instead (`src/dispatch.ts`). At most every 30 s, on a main-session tool call, it reads each active board the session has used and compares it with its last look, using Cairn's triggers:
 
-- **open intents nobody has claimed** → one `cairn-dispatch` message asking for one `task` subagent per intent, each with its own worker name (each intent is announced once, including intents already open when a session resumes a board);
-- **more facts or hints, or the last open intent concluded** → a message asking for a Reason pass (`reason_claim`, `board_export`, then `board_complete` or `intent_create` + `reason_release`).
+- **open intents nobody has claimed** → one `cairn-dispatch` message asking for one `task` subagent per intent, each with its own worker name. An intent is announced once while it stays open, including intents already open when a session resumes a board; one that goes back to open (`intent_release`, or an expired lease) is announced again;
+- **more facts or hints, or the last open intent concluded** → a message asking for a Reason pass (`reason_claim`, `board_export`, then `board_complete`, which releases the Reason lease itself, or `intent_create` + `reason_release`). While any worker still holds an intent this prompt waits, then fires once they have all finished, so the controller does not close the board on half the results.
 
-Messages carry only counts, short intent ids and the project name, never board text. A board that cannot be read is skipped: the hook never blocks a tool call. Subagents get no advice.
+Messages carry only counts, short intent ids and the project name, never board text. A board that cannot be read, or a message that cannot be sent, is skipped: the hook never blocks a tool call. Subagents get no advice.
 
 ## Watching the board
 
