@@ -52,7 +52,7 @@ Ask the agent to investigate something open-ended with `cairn-search`, or drive 
 ### Coordination rules (enforced in code, not just in prompts)
 
 - `intent_create` needs the Reason lease (`reason_claim` → `reason_token`), and one pass may declare at most **2** intents.
-- `intent_claim` returns a **lease token**. `intent_heartbeat`, `intent_conclude` and `intent_release` are compare-and-swap on that token: a worker whose lease was reclaimed can never overwrite its successor, and its rejected `intent_conclude` creates no fact.
+- `intent_claim` returns a **lease token**. `intent_heartbeat`, `intent_conclude` and `intent_release` are compare-and-swap on that token: a worker whose lease was reclaimed can never overwrite its successor, and its rejected `intent_conclude` creates no fact. The token guards against races and stale writers among cooperating agents; it is not authentication (see [Trust model](#trust-model)).
 - A claimed intent whose lease goes stale reopens automatically, so a dead subagent never wedges the board.
 - Rejections are structured: tool errors carry a `code` (`intent_claimed`, `lease_lost`, `invalid_transition`, `reason_held`, …) plus `held_by` and `lease_expires_at` when a lease is involved, so a worker can tell a transient refusal from a permanent one.
 - `fact_claim` is idempotent (same text → same id; a repeat claim keeps the first row and adds any new `from` ids). `from` lists the facts it builds on (`"origin"` for the first), which draws its edges in the graph; without it the fact floats unconnected. `fact_dispute` marks a fact wrong; disputed facts cannot be cited as sources.
@@ -83,6 +83,17 @@ The viewer opens the database read-only, binds to `127.0.0.1` only, answers only
 Each tool also takes an optional `project` name: every project is its own board file (under `fact-boards/` next to the default), with its own origin, goal and graph.
 
 ## Security notes
+
+### Trust model
+
+**Single-tenant, local trust.** The board assumes every agent and person who can reach it is the same trusted user on the same machine.
+
+- There is no per-worker authentication. A `worker` name is a label, not an identity: calling `intent_claim` again with the name that currently holds an intent returns that lease's token (that is how a worker whose context was compacted recovers it), and `claimed_by` is visible through `board_export` and the viewer. Anyone who can read the board can therefore take over, conclude or release another worker's intent.
+- Anyone who can open the database file can read and change everything in it directly; the tools add no access control on top of the file's permissions.
+- The viewer is read-only and binds to loopback only (with a `Host` header check), but it shows the whole board to any local process or user that can reach that port.
+- Do not share one board between mutually untrusting agents, users or tenants, and do not expose the viewer or the database file over a network or a shared volume. Use a separate `project` (a separate database file) per trust boundary.
+
+### Stored data
 
 - The database is shared by every project that uses the same agent directory, and findings are stored in plain text. For sensitive work set `FACT_BOARD_DB` (or pass `project`) to keep data apart, and keep the file out of backups and sync.
 - Facts, evidence, dispute reasons, intents and hints are passed through best-effort credential redaction **before** they are stored. It is regex-based: it catches common shapes (`password=…`, `*token` / `*Token` keys, `*_secret`, API keys, `Bearer …`, AWS key ids, common provider tokens, private-key blocks), not arbitrary secrets. Do not treat the board as a safe place for credentials.
