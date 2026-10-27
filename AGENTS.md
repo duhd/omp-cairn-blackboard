@@ -115,7 +115,6 @@ omp plugin features omp-cairn-blackboard --enable=redact-output
 
 ## Known Doc/Code Gaps (fix in code or docs, don't rely on the docs)
 
-- `SKILL.md` says to call `board_complete` and then `reason_release`. But `complete()` already clears the Reason lease, so the release then errors. Stop after `board_complete`.
 - `board_complete` and `board_reopen` do not require the Reason lease. `fact_dispute` and `hint_write` skip `assertActive()`/`requireInit()`.
 - `board_export` is not a pure read: it runs `expireStale()` in a write transaction. The viewer uses `readSnapshot` instead.
 - `concludeIntent` accepts an expired lease that no one has reclaimed. "no longer valid" means the lease was superseded or released, not that it timed out.
