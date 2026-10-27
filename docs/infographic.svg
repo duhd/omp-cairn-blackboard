@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 540" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <rect width="100%" height="100%" fill="#ffffff"/>
   <defs>
     <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#374151"/>
@@ -82,9 +83,9 @@
   <text x="141" y="455" font-size="12" fill="#4b5563" text-anchor="middle">repeat claims add new sources</text>
 
   <rect x="268" y="392" width="222" height="90" rx="10" fill="#f9fafb" stroke="#d1d5db"/>
-  <text x="379" y="416" font-size="13" font-weight="600" fill="#111827" text-anchor="middle">Edges from `from`</text>
+  <text x="379" y="416" font-size="13" font-weight="600" fill="#111827" text-anchor="middle">Edges from the from list</text>
   <text x="379" y="436" font-size="12" fill="#4b5563" text-anchor="middle">a fact cites the facts it</text>
-  <text x="379" y="455" font-size="12" fill="#4b5563" text-anchor="middle">builds on; no `from`, no edge</text>
+  <text x="379" y="455" font-size="12" fill="#4b5563" text-anchor="middle">builds on; none listed, no edge</text>
 
   <rect x="506" y="392" width="222" height="90" rx="10" fill="#f9fafb" stroke="#d1d5db"/>
   <text x="617" y="416" font-size="13" font-weight="600" fill="#111827" text-anchor="middle">Stale writers rejected</text>
