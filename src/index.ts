@@ -29,6 +29,8 @@ interface SharedState {
 const SHARED_KEY: unique symbol = Symbol.for("omp-cairn-blackboard.state");
 const host = globalThis as typeof globalThis & { [SHARED_KEY]?: SharedState };
 const shared: SharedState = (host[SHARED_KEY] ??= { boards: new Map(), sessions: new Map() });
+// State left on globalThis by an earlier version of this extension in the same process has no `sessions`.
+shared.sessions ??= new Map();
 
 function boardFor(project: string | undefined): Board {
   const path = resolveDbPath(project);
@@ -67,7 +69,7 @@ function nextSteps(project: string | undefined): string {
   const scope = project ? ` Pass project: "${project}" on every board tool call, otherwise it writes to the default board.` : "";
   return (
     "The board records nothing automatically. Record each confirmed finding or finished milestone with fact_claim (text, evidence, and `from`: the fact ids it builds on, \"origin\" for the first), so the graph shows how the work progressed." +
-    " To split work, take the Reason lease (reason_claim), then intent_create from \"origin\" or fact ids, and have a worker intent_claim and intent_conclude it." +
+    " To split work, take the Reason lease (reason_claim), then intent_create from \"origin\" or fact ids, and have a worker intent_claim and intent_conclude it. Declare the intent BEFORE doing the work it covers (especially anything that changes a system: deploy, rollback, migration), claim it, do the work, then intent_conclude with the result, so the board never trails what is actually happening." +
     " Anyone can watch the graph with /fact-board." +
     scope
   );
@@ -167,7 +169,7 @@ export default function blackboard(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "intent_create",
     description:
-      'Declare a direction to explore. "from" lists the fact ids it grows from, comma-separated (or a JSON array); use "origin" for the start. Requires the reason_token from reason_claim.',
+      'Declare a direction to explore. "from" lists the fact ids it grows from, comma-separated (or a JSON array); use "origin" for the start. Requires the reason_token from reason_claim. Declare the intent BEFORE doing the work it covers (then intent_claim, do the work, intent_conclude with the result), so the board shows work in progress instead of trailing it.',
     parameters: z.object({ description: z.string(), from: z.string(), reason_token: z.string(), project }),
     async execute(_id, params) {
       return run(() =>

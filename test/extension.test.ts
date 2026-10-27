@@ -179,3 +179,13 @@ test("only well-formed names from board tools reach the compaction summary", asy
   expect(joined).not.toContain("not-a-board-tool");
   expect(context.filter(line => line.startsWith("- "))).toHaveLength(1);
 });
+
+test("state left on globalThis by an older version of the extension (no session map) does not break the hooks", async () => {
+  process.env.FACT_BOARD_DB = join(dir, "old-state-board.db");
+  const key = Symbol.for("omp-cairn-blackboard.state");
+  (globalThis as Record<symbol, unknown>)[key] = { boards: new Map() };
+  const { toolCall, compacting } = await loadInstance("old-state");
+  const session = sessionOf("session-old-state");
+  toolCall({ toolName: "fact_claim", input: { text: "t", project: "after-reload" } }, session);
+  expect(compacting({ sessionId: "session-old-state" })?.context.join("\n")).toContain('project "after-reload"');
+});
