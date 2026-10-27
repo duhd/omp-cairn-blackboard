@@ -25,7 +25,7 @@ The tools may not appear in the tool list; omp mounts them under `xd://` instead
 
 ## Loop
 
-1. **Init** — `board_init({ origin, goal })`. State what is known and what counts as done.
+1. **Init** — `board_init({ origin, goal })`. State what is known and what counts as done. **Continuing earlier work?** Run `board_list` first to find the board, then `board_export` on it; the board is not loaded into your context for you.
 2. **Bootstrap** — attempt the problem directly. If solved, `board_complete` with the facts that prove it, and stop.
 3. **Reason** — `reason_claim(worker)` for the Reason lease, then `board_export()` to read the whole graph.
    - Goal met → `board_complete({ from: "comma-separated fact ids (or \"origin\")", description, worker })`, then `reason_release`.

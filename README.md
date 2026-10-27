@@ -4,7 +4,7 @@ A state-space-search **blackboard** for omp (oh-my-pi). It gives parallel subage
 
 | Piece | What it is |
 |---|---|
-| **Fact board** (extension) | Sixteen tools implementing a fact–intent graph: `board_init`, `board_export`, `board_complete`, `board_reopen`, `fact_claim`, `fact_query`, `fact_dispute`, `reason_claim`, `reason_release`, `intent_create`, `intent_claim`, `intent_heartbeat`, `intent_conclude`, `intent_release`, `hint_write`, `hint_query`. |
+| **Fact board** (extension) | Seventeen tools implementing a fact–intent graph: `board_init`, `board_list`, `board_export`, `board_complete`, `board_reopen`, `fact_claim`, `fact_query`, `fact_dispute`, `reason_claim`, `reason_release`, `intent_create`, `intent_claim`, `intent_heartbeat`, `intent_conclude`, `intent_release`, `hint_write`, `hint_query`. `board_list` is how a new session finds the board of unfinished work. |
 | **`cairn-search`** (skill) | The loop: Init → Bootstrap → Reason → Explore → Converge, for problems whose path is unknown up front. |
 | **`/fact-board`** (command) | A read-only live view of the graph, for watching long multi-subagent investigations. |
 | **`redact-output`** (optional feature) | Rewrites credential-shaped values in command/execution output (`bash`, `eval`) before it reaches the transcript. File reads and searches are left untouched. Off by default. |

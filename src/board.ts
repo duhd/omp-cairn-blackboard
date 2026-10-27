@@ -773,6 +773,43 @@ export function readSnapshot(dbPath: string, limit = 500): Snapshot | { missing:
   }
 }
 
+export interface BoardSummary {
+  /** "" is the default board. */
+  project: string;
+  /** `legacy`: a 0.1 file not yet upgraded by a writer, so it cannot be summarized. */
+  status: BoardStatus | "legacy";
+  origin: string | null;
+  goal: string | null;
+  facts: number;
+  intents: number;
+  /** Newest fact, intent update or hint, or the board's creation when it has none. */
+  last_activity: number | null;
+}
+
+/**
+ * Every board that exists, active ones first and the most recently used first within each group. A new session
+ * cannot continue unfinished work unless it can find which board holds it, so this is how a board is discovered.
+ * Read-only; counts are capped by the snapshot limit.
+ */
+export function listBoards(basePath: string): BoardSummary[] {
+  const summaries: BoardSummary[] = [];
+  for (const project of ["", ...listProjects(basePath)]) {
+    const snapshot = readSnapshot(projectDbPath(basePath, project || undefined));
+    if ("missing" in snapshot) continue;
+    if ("legacy" in snapshot) {
+      summaries.push({ project, status: "legacy", origin: null, goal: null, facts: 0, intents: 0, last_activity: null });
+      continue;
+    }
+    const { board } = snapshot;
+    if (!board.initialized) continue;
+    const stamps = [board.created_at, ...snapshot.facts.map(f => f.created_at), ...snapshot.intents.map(i => i.updated_at), ...snapshot.hints.map(h => h.created_at)];
+    const last = Math.max(0, ...stamps.filter((t): t is number => t !== null));
+    summaries.push({ project, status: board.status, origin: board.origin, goal: board.goal, facts: snapshot.facts.length, intents: snapshot.intents.length, last_activity: last || null });
+  }
+  const rank = (s: BoardSummary) => (s.status === "active" ? 0 : 1);
+  return summaries.sort((a, b) => rank(a) - rank(b) || (b.last_activity ?? 0) - (a.last_activity ?? 0));
+}
+
 function chronological(snapshot: Snapshot): Snapshot {
   return {
     board: snapshot.board,

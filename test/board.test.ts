@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Board, BoardError, listProjects, parseIdList, projectDbPath, readSnapshot } from "../src/board";
+import { Board, BoardError, listBoards, listProjects, parseIdList, projectDbPath, readSnapshot } from "../src/board";
 import type { BoardOptions } from "../src/board";
 import redactOutput from "../src/redact-output";
 import { redactText } from "../src/redact";
@@ -568,5 +568,50 @@ describe("viewer", () => {
     } finally {
       viewer.stop();
     }
+  });
+});
+
+describe("listBoards", () => {
+  test("lists active boards before finished ones, most recent first, and skips what cannot be continued", () => {
+    const base = join(tempDir("blackboard-list-"), "fact-board.db");
+    let clock = 1_000;
+    const at = (path: string) => newBoard({ now: () => clock }, path);
+
+    // Default board: never created, so it must not appear.
+    const older = at(projectDbPath(base, "older"));
+    older.init({ origin: "o1", goal: "g1" });
+    older.claimFact({ text: "old finding" });
+    clock = 5_000;
+    const newer = at(projectDbPath(base, "newer"));
+    newer.init({ origin: "o2", goal: "g2" });
+    newer.claimFact({ text: "new finding" });
+    clock = 9_000;
+    const finished = at(projectDbPath(base, "finished"));
+    finished.init({ origin: "o3", goal: "g3" });
+    const fact = finished.claimFact({ text: "proof" });
+    finished.complete({ from: [fact.id], description: "done", worker: "w" });
+    // A file that was opened but never initialized has no goal to continue.
+    at(projectDbPath(base, "blank"));
+    // A 0.1 file is reported, not summarized.
+    const legacyPath = projectDbPath(base, "legacy");
+    const legacy = new Database(legacyPath, { create: true });
+    legacy.exec("CREATE TABLE facts (id TEXT PRIMARY KEY, text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'claimed', claimed_by TEXT, evidence TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);");
+    legacy.close();
+
+    const listed = listBoards(base);
+    expect(listed.map(b => [b.project, b.status])).toEqual([
+      ["newer", "active"],
+      ["older", "active"],
+      ["finished", "completed"],
+      ["legacy", "legacy"],
+    ]);
+    const [first] = listed;
+    expect([first.origin, first.goal, first.facts, first.last_activity]).toEqual(["o2", "g2", 1, 5_000]);
+  });
+
+  test("includes an initialized default board with an empty project name", () => {
+    const base = join(tempDir("blackboard-list-"), "fact-board.db");
+    newBoard({}, base).init({ origin: "o", goal: "g" });
+    expect(listBoards(base).map(b => b.project)).toEqual([""]);
   });
 });

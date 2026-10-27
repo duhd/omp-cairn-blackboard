@@ -5,7 +5,7 @@
 `omp-cairn-blackboard` is an omp (oh-my-pi) plugin, v0.2.0, MIT, with **zero dependencies**. It gives parallel `task` subagents a shared, persistent **fact–intent graph** (a "blackboard") to coordinate through, in place of messaging each other. The idea comes from Cairn: *state is the single source of truth, decisions are distributed to workers*. None of Cairn's code is used.
 
 The package ships four pieces:
-- A 16-tool extension: `src/index.ts`
+- A 17-tool extension: `src/index.ts`
 - The `cairn-search` workflow skill: `skills/cairn-search/SKILL.md`
 - A read-only live viewer: `src/viewer.ts`, started with `/fact-board`. It has a list view and an SVG Graph tab laid out by `src/graph.ts`
 - An opt-in `redact-output` feature: `src/redact-output.ts`
@@ -77,7 +77,7 @@ omp plugin features omp-cairn-blackboard --enable=redact-output
 | File | Why it matters |
 |---|---|
 | `src/board.ts` | Schema, migration, path/project resolution, every invariant. Its header comment is the canonical rule list, so keep it in sync |
-| `src/index.ts` | 16 `registerTool` calls, the `/fact-board` command (start also upgrades an existing default board), and a `session_shutdown` handler that, for the main agent only, stops the viewer and closes the board connections. Viewer handle and boards live on `globalThis` so any module instance can stop what another started |
+| `src/index.ts` | 17 `registerTool` calls (`board_list` is the discovery tool: a session that continues earlier work cannot read a board it cannot find), the `/fact-board` command (start also upgrades an existing default board), and a `session_shutdown` handler that, for the main agent only, stops the viewer and closes the board connections. Viewer handle and boards live on `globalThis` so any module instance can stop what another started |
 | `src/viewer.ts` | `startViewer` checks method, loopback and `Host`. The page renders board text with `textContent` / SVG text nodes only and must never use `innerHTML` |
 | `src/graph.ts` | `buildGraph(snapshot, now)` returns nodes, edges and size for the Graph tab. Cycles are handled as back edges, so keep it pure |
 | `package.json` | `omp.extensions`, `omp.features["redact-output"]` (`default: false`), `files` (excludes `test/`) |
