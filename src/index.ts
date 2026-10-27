@@ -10,6 +10,8 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { existsSync } from "node:fs";
 import { Board, BoardError, listBoards, parseIdList, resolveDbPath } from "./board";
+import { compactionContext, recordToolUse } from "./session-boards";
+import type { SessionBoards } from "./session-boards";
 import { startViewer } from "./viewer";
 import type { ViewerHandle } from "./viewer";
 
@@ -20,11 +22,13 @@ import type { ViewerHandle } from "./viewer";
 // server another instance started (it keeps the port), and every subagent opens SQLite handles it never closes.
 interface SharedState {
   boards: Map<string, Board>;
+  /** Which boards each session has used; lets a compaction summary say which to reload. */
+  sessions: SessionBoards;
   viewer?: ViewerHandle;
 }
 const SHARED_KEY: unique symbol = Symbol.for("omp-cairn-blackboard.state");
 const host = globalThis as typeof globalThis & { [SHARED_KEY]?: SharedState };
-const shared: SharedState = (host[SHARED_KEY] ??= { boards: new Map() });
+const shared: SharedState = (host[SHARED_KEY] ??= { boards: new Map(), sessions: new Map() });
 
 function boardFor(project: string | undefined): Board {
   const path = resolveDbPath(project);
@@ -283,8 +287,19 @@ export default function blackboard(pi: ExtensionAPI): void {
     },
   });
 
+  // Compaction rewrites the conversation, and with it the project and worker names the agent was using. Note
+  // which boards this session touches and hand the summary a pointer to reload them (names only, no board text).
+  pi.on("tool_call", (event, ctx) => {
+    recordToolUse(shared.sessions, ctx.sessionManager.getSessionId(), event.toolName, event.input);
+  });
+  pi.on("session.compacting", event => {
+    const context = compactionContext(shared.sessions, event.sessionId);
+    return context.length > 0 ? { context } : undefined;
+  });
+
   // Subagent sessions load their own instance of this module; only the main session's shutdown stops the viewer.
   pi.on("session_shutdown", async (_event, ctx) => {
+    shared.sessions.delete(ctx.sessionManager.getSessionId());
     if (ctx.agent.kind !== "main") return;
     shared.viewer?.stop();
     shared.viewer = undefined;

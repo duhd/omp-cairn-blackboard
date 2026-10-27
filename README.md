@@ -57,6 +57,10 @@ Ask the agent to investigate something open-ended with `cairn-search`, or drive 
 - Rejections are structured: tool errors carry a `code` (`intent_claimed`, `lease_lost`, `invalid_transition`, `reason_held`, …) plus `held_by` and `lease_expires_at` when a lease is involved, so a worker can tell a transient refusal from a permanent one.
 - `fact_claim` is idempotent (same text → same id; a repeat claim keeps the first row and adds any new `from` ids). `from` lists the facts it builds on (`"origin"` for the first), which draws its edges in the graph; without it the fact floats unconnected. `fact_dispute` marks a fact wrong; disputed facts cannot be cited as sources.
 
+### After a compaction
+
+Compacting a session rewrites the conversation, and with it the project and worker names the agent was using. The extension notes (per session, in process memory) which projects each session wrote to and which worker names it claimed with, and on `session.compacting` hands the summarizer one short block: the project and worker names, and a required first step: `board_export` (timeline) for each board, then `intent_claim` again with the same worker name on any intent still held, which returns the lease token. Only names that match the project/worker name rules are included, never board text. Subagents are tracked under their own session ids, so a parent's summary lists only the boards the parent itself called. This is a nudge inside the summary, not a guarantee the next turn follows it.
+
 ## Watching the board
 
 `/fact-board` starts a read-only viewer in-process (default `http://127.0.0.1:8799`); `/fact-board stop` and `/fact-board status`. It refreshes every 2 s and has two tabs:

@@ -162,7 +162,7 @@ const INTENT_COLUMNS: ReadonlyArray<readonly [string, string]> = [
   ["to_fact_id", "TEXT"],
 ];
 
-const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+export const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 function defaultDbPath(): string {
   const override = process.env.FACT_BOARD_DB;
