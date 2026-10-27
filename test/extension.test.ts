@@ -38,12 +38,13 @@ type ToolDef = { name: string; execute(id: string, params: Record<string, unknow
 
 async function loadInstance(
   tag: string,
-): Promise<{ module: object; command: CommandHandler; tools: Record<string, ToolDef>; toolCall: ToolCallHandler; compacting: CompactingHandler }> {
+): Promise<{ module: object; command: CommandHandler; tools: Record<string, ToolDef>; toolCall: ToolCallHandler; compacting: CompactingHandler; nudges: string[] }> {
   const module = await import(`${join(import.meta.dir, "..", "src", "index.ts")}?instance=${tag}`);
   let command: CommandHandler | undefined;
   let shutdown: ShutdownHandler | undefined;
   let toolCall: ToolCallHandler | undefined;
   let compacting: CompactingHandler | undefined;
+  const nudges: string[] = [];
   const tools: Record<string, ToolDef> = {};
   const pi = {
     zod: schema,
@@ -58,11 +59,14 @@ async function loadInstance(
       if (event === "tool_call") toolCall = handler;
       if (event === "session.compacting") compacting = handler;
     },
+    sendMessage(message: { content: string }) {
+      nudges.push(message.content);
+    },
   };
   module.default(pi as never);
   if (shutdown) shutdowns.push(shutdown);
   if (!command || !toolCall || !compacting) throw new Error("extension did not register its command and hooks");
-  return { module, command, tools, toolCall, compacting };
+  return { module, command, tools, toolCall, compacting, nudges };
 }
 
 test("a viewer started from one module instance can be stopped from another", async () => {
@@ -188,4 +192,26 @@ test("state left on globalThis by an older version of the extension (no session 
   const session = sessionOf("session-old-state");
   toolCall({ toolName: "fact_claim", input: { text: "t", project: "after-reload" } }, session);
   expect(compacting({ sessionId: "session-old-state" })?.context.join("\n")).toContain('project "after-reload"');
+});
+
+test("a main session that works long enough without writing to a board is reminded, and a write silences it", async () => {
+  process.env.FACT_BOARD_DB = join(dir, "nudge-board.db");
+  const { toolCall, nudges } = await loadInstance("nudge");
+  const main = sessionOf("session-nudge");
+  for (let i = 0; i < 24; i++) toolCall({ toolName: "read", input: { path: `p${i}` } }, main);
+  expect(nudges).toHaveLength(1);
+  expect(nudges[0]).toContain("board_init");
+  expect(nudges[0]).toContain("fact_claim");
+  // Recording a fact counts as progress, so the next 24 calls stay quiet.
+  toolCall({ toolName: "fact_claim", input: { text: "x", project: "p" } }, main);
+  for (let i = 0; i < 24; i++) toolCall({ toolName: "read", input: { path: `q${i}` } }, main);
+  expect(nudges).toHaveLength(1);
+});
+
+test("subagent sessions are never nudged", async () => {
+  process.env.FACT_BOARD_DB = join(dir, "nudge-sub-board.db");
+  const { toolCall, nudges } = await loadInstance("nudge-sub");
+  const sub: SessionContext = { ...sessionOf("session-nudge-sub"), agent: { kind: "task" } };
+  for (let i = 0; i < 30; i++) toolCall({ toolName: "read", input: { path: `p${i}` } }, sub);
+  expect(nudges).toHaveLength(0);
 });

@@ -10,8 +10,8 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { existsSync } from "node:fs";
 import { Board, BoardError, listBoards, parseIdList, resolveDbPath } from "./board";
-import { compactionContext, recordToolUse } from "./session-boards";
-import type { SessionBoards } from "./session-boards";
+import { compactionContext, nudgeOnCall, recordToolUse } from "./session-boards";
+import type { NudgeState, SessionBoards } from "./session-boards";
 import { startViewer } from "./viewer";
 import type { ViewerHandle } from "./viewer";
 
@@ -24,13 +24,17 @@ interface SharedState {
   boards: Map<string, Board>;
   /** Which boards each session has used; lets a compaction summary say which to reload. */
   sessions: SessionBoards;
+  /** Per-session activity for the in-session reminder to write to the board. */
+  nudges: NudgeState;
   viewer?: ViewerHandle;
 }
 const SHARED_KEY: unique symbol = Symbol.for("omp-cairn-blackboard.state");
 const host = globalThis as typeof globalThis & { [SHARED_KEY]?: SharedState };
-const shared: SharedState = (host[SHARED_KEY] ??= { boards: new Map(), sessions: new Map() });
+const shared: SharedState = (host[SHARED_KEY] ??= { boards: new Map(), sessions: new Map(), nudges: new Map() });
 // State left on globalThis by an earlier version of this extension in the same process has no `sessions`.
+// State left on globalThis by an earlier version of this extension in the same process lacks these maps.
 shared.sessions ??= new Map();
+shared.nudges ??= new Map();
 
 function boardFor(project: string | undefined): Board {
   const path = resolveDbPath(project);
@@ -292,7 +296,12 @@ export default function blackboard(pi: ExtensionAPI): void {
   // Compaction rewrites the conversation, and with it the project and worker names the agent was using. Note
   // which boards this session touches and hand the summary a pointer to reload them (names only, no board text).
   pi.on("tool_call", (event, ctx) => {
-    recordToolUse(shared.sessions, ctx.sessionManager.getSessionId(), event.toolName, event.input);
+    const sessionId = ctx.sessionManager.getSessionId();
+    recordToolUse(shared.sessions, sessionId, event.toolName, event.input);
+    // Only the main session is nudged: a subagent's reply goes to its parent, not to a person who can act on it.
+    if (ctx.agent.kind !== "main") return;
+    const nudge = nudgeOnCall(shared.nudges, sessionId, event.toolName, Date.now());
+    if (nudge) pi.sendMessage({ customType: "cairn-nudge", display: true, content: nudge }, { deliverAs: "aside" });
   });
   pi.on("session.compacting", event => {
     const context = compactionContext(shared.sessions, event.sessionId);
@@ -302,6 +311,7 @@ export default function blackboard(pi: ExtensionAPI): void {
   // Subagent sessions load their own instance of this module; only the main session's shutdown stops the viewer.
   pi.on("session_shutdown", async (_event, ctx) => {
     shared.sessions.delete(ctx.sessionManager.getSessionId());
+    shared.nudges.delete(ctx.sessionManager.getSessionId());
     if (ctx.agent.kind !== "main") return;
     shared.viewer?.stop();
     shared.viewer = undefined;
