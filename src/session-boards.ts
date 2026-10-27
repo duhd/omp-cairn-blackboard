@@ -49,35 +49,44 @@ export function compactionContext(state: SessionBoards, sessionId: string): stri
 
 /** What the plugin has seen for one session, for deciding when to remind it to write to (or read) its board. */
 export interface SessionActivity {
-  /** Tool calls seen for this session, across every tool (not only board tools). */
-  total: number;
-  /** Board-write tool calls seen since the last nudge (fact_claim, intent_conclude, hint_write, board_complete, board_reopen). */
-  writesSinceNudge: number;
+  /** Non-board tool calls since the session last touched the board. */
+  callsSinceWrite: number;
+  /** How many nudges this session has already received. */
+  nudgesSent: number;
   /** Last nudge at, so a busy session is not spammed. */
   lastNudgeAt: number;
 }
 
-/** How many non-board tool calls a session may make after its last nudge before the plugin speaks up. */
+/** How many non-board tool calls a session may make without touching the board before the plugin speaks up. */
 export const NUDGE_AFTER_CALLS = 24;
 /** Minimum gap between two nudges. */
 export const NUDGE_COOLDOWN_MS = 10 * 60_000;
+/** A session stops being reminded after this many nudges. */
+export const MAX_NUDGES_PER_SESSION = 3;
 
-const WRITE_TOOLS: Record<string, true> = { fact_claim: true, intent_conclude: true, hint_write: true, board_complete: true, board_reopen: true };
+// Any board tool counts as "touched the board": the point is to notice a session that stopped recording at all.
+const RESET_TOOLS: Record<string, true> = {
+  board_init: true, board_export: true, board_list: true, board_complete: true, board_reopen: true,
+  fact_claim: true, fact_query: true, fact_dispute: true,
+  reason_claim: true, reason_release: true,
+  intent_create: true, intent_claim: true, intent_heartbeat: true, intent_conclude: true, intent_release: true,
+  hint_write: true, hint_query: true,
+};
 
 export type NudgeState = Map<string, SessionActivity>;
 
-/** Note the tool call and return a nudge message when the session has worked long enough without recording. */
+/** Note the tool call and return a nudge message when the session has worked long enough without touching its board. */
 export function nudgeOnCall(state: NudgeState, sessionId: string, toolName: string, now: number): string | undefined {
-  const activity = state.get(sessionId) ?? { total: 0, writesSinceNudge: 0, lastNudgeAt: -Infinity };
-  activity.total += 1;
-  if (WRITE_TOOLS[toolName]) activity.writesSinceNudge += 1;
+  const activity = state.get(sessionId) ?? { callsSinceWrite: 0, nudgesSent: 0, lastNudgeAt: -Infinity };
+  if (RESET_TOOLS[toolName]) activity.callsSinceWrite = 0;
+  else activity.callsSinceWrite += 1;
   state.set(sessionId, activity);
+  if (activity.nudgesSent >= MAX_NUDGES_PER_SESSION) return undefined;
   if (now - activity.lastNudgeAt < NUDGE_COOLDOWN_MS) return undefined;
-  if (activity.writesSinceNudge > 0) return undefined;
-  if (activity.total < NUDGE_AFTER_CALLS) return undefined;
+  if (activity.callsSinceWrite < NUDGE_AFTER_CALLS) return undefined;
   activity.lastNudgeAt = now;
-  activity.writesSinceNudge = 0;
-  activity.total = 0;
+  activity.nudgesSent += 1;
+  activity.callsSinceWrite = 0;
   state.set(sessionId, activity);
   return (
     "The board does not record work by itself. This session has made several tool calls without writing to its board. " +
