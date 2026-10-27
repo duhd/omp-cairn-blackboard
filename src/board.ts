@@ -54,7 +54,7 @@ export interface FactRow {
 }
 
 /** A fact plus the intents that produced it (empty for facts claimed directly). */
-export type FactView = FactRow & { produced_by: string[] };
+export type FactView = FactRow & { produced_by: string[]; /** Facts (or "origin") a directly claimed fact builds on. */ from: string[] };
 
 interface IntentRow {
   id: string;
@@ -137,6 +137,11 @@ CREATE TABLE IF NOT EXISTS intent_sources (
   intent_id TEXT NOT NULL,
   fact_id TEXT NOT NULL,
   PRIMARY KEY (intent_id, fact_id)
+);
+CREATE TABLE IF NOT EXISTS fact_sources (
+  fact_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  PRIMARY KEY (fact_id, source_id)
 );
 CREATE TABLE IF NOT EXISTS hints (
   id TEXT PRIMARY KEY,
@@ -326,19 +331,30 @@ export class Board {
 
   // ── facts ──────────────────────────────────────────────────────────────────
 
-  /** Claims a finding directly (bootstrapping). Explorers should conclude an intent instead, which records provenance. */
-  claimFact(input: { text: string; claimedBy?: string; evidence?: string }): FactRow {
-    this.assertActive();
-    const text = redactText(input.text);
-    // The id is derived from the stored text, so identical findings dedupe to one row.
-    const id = factIdOf(text);
-    this.db
-      .query(
-        `INSERT OR IGNORE INTO facts (id, text, status, claimed_by, evidence, created_at)
-         VALUES (?, ?, 'claimed', ?, ?, ?)`,
-      )
-      .run(id, text, input.claimedBy ?? "unknown", input.evidence ? redactText(input.evidence) : null, this.now());
-    return this.requireFact(id);
+  /**
+   * Claims a finding directly (bootstrapping, or a milestone in sequential work). `from` names the facts it builds
+   * on ("origin" for the first), which is what draws its edges in the graph. Explorers working an intent should
+   * conclude it instead, which records provenance through the intent.
+   */
+  claimFact(input: { text: string; claimedBy?: string; evidence?: string; from?: readonly string[] }): FactRow {
+    return this.write(() => {
+      this.assertActive();
+      const text = redactText(input.text);
+      // The id is derived from the stored text, so identical findings dedupe to one row.
+      const id = factIdOf(text);
+      const sources = input.from && input.from.length > 0 ? this.validateSources(input.from) : [];
+      if (sources.includes(id)) throw new BoardError("a fact cannot be its own source");
+      this.db
+        .query(
+          `INSERT OR IGNORE INTO facts (id, text, status, claimed_by, evidence, created_at)
+           VALUES (?, ?, 'claimed', ?, ?, ?)`,
+        )
+        .run(id, text, input.claimedBy ?? "unknown", input.evidence ? redactText(input.evidence) : null, this.now());
+      // A repeated claim keeps its first row but may add sources it did not cite before.
+      const insert = this.db.query("INSERT OR IGNORE INTO fact_sources (fact_id, source_id) VALUES (?, ?)");
+      for (const source of sources) insert.run(id, source);
+      return this.requireFact(id);
+    });
   }
 
   getFact(id: string): FactRow | null {
@@ -734,6 +750,13 @@ export function snapshotFrom(db: Database, limit: number, leaseMs = envNumber("F
   for (const r of db.query<{ intent_id: string; fact_id: string }, []>("SELECT intent_id, fact_id FROM intent_sources ORDER BY rowid").all()) {
     sources.set(r.intent_id, [...(sources.get(r.intent_id) ?? []), r.fact_id]);
   }
+  // Boards written before fact sources existed lack the table until a writer opens them; read those as having none.
+  const factSources = new Map<string, string[]>();
+  if (db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'fact_sources'").get()) {
+    for (const r of db.query<{ fact_id: string; source_id: string }, []>("SELECT fact_id, source_id FROM fact_sources ORDER BY rowid").all()) {
+      factSources.set(r.fact_id, [...(factSources.get(r.fact_id) ?? []), r.source_id]);
+    }
+  }
   const intents = db
     .query<Omit<IntentRow, "lease_token">, [number]>(
       `SELECT id, description, status, created_by, claimed_by, heartbeat_at, to_fact_id, created_at, updated_at
@@ -748,7 +771,7 @@ export function snapshotFrom(db: Database, limit: number, leaseMs = envNumber("F
   const facts = db
     .query<FactRow, [number]>("SELECT * FROM facts ORDER BY created_at DESC LIMIT ?")
     .all(limit)
-    .map(row => ({ ...row, produced_by: producers.get(row.id) ?? [] }));
+    .map(row => ({ ...row, produced_by: producers.get(row.id) ?? [], from: factSources.get(row.id) ?? [] }));
   const hints = db.query<HintRow, [number]>("SELECT * FROM hints ORDER BY created_at DESC LIMIT ?").all(limit);
   return { board: infoFrom(db), facts, intents, hints };
 }
@@ -827,7 +850,10 @@ function timelineOf(snapshot: Snapshot): string {
     events.push({ at: board.created_at, text: `BOARD INITIALIZED\n  origin: ${board.origin}\n  goal: ${board.goal}` });
   }
   for (const fact of snapshot.facts) {
-    if (fact.produced_by.length === 0) events.push({ at: fact.created_at, text: `FACT CLAIMED ${fact.id} by ${fact.claimed_by}\n  ${fact.text}` });
+    if (fact.produced_by.length === 0) {
+      const from = fact.from.length > 0 ? `\n  from: ${fact.from.join(", ")}` : "";
+      events.push({ at: fact.created_at, text: `FACT CLAIMED ${fact.id} by ${fact.claimed_by}${from}\n  ${fact.text}` });
+    }
   }
   for (const hint of snapshot.hints) events.push({ at: hint.created_at, text: `HINT\n  ${hint.content}` });
   for (const intent of snapshot.intents) {

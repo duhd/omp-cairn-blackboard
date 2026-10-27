@@ -127,4 +127,16 @@ describe("graph layout", () => {
   test("an empty board draws nothing", () => {
     expect(buildGraph(snapshotOf(newBoard()), Date.now()).nodes).toEqual([]);
   });
+
+  test("directly claimed facts are linked to their sources, so sequential work draws a chain", () => {
+    const board = newBoard();
+    board.init({ origin: "o", goal: "g" });
+    const a = board.claimFact({ text: "stash saved", from: ["origin"] });
+    const b = board.claimFact({ text: "merge resolved", from: [a.id] });
+    const graph = buildGraph(snapshotOf(board), Date.now());
+    expect(graph.edges).toContainEqual({ from: "origin", to: a.id });
+    expect(graph.edges).toContainEqual({ from: a.id, to: b.id });
+    expect(node(graph, a.id).layer).toBeLessThan(node(graph, b.id).layer);
+    expect(node(graph, "goal").layer).toBeGreaterThan(node(graph, b.id).layer);
+  });
 });

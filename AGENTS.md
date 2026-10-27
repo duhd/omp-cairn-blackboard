@@ -28,7 +28,7 @@ src/redact.ts ── shared regex rules ──► board.ts (redact before store)
                                    └──► redact-output.ts (tool_result hook, bash/eval only)
 ```
 
-- **Graph:** `origin ─► Intent ─► Fact ─► Intent ─► … ─► goal`. An intent must cite source facts (`from`). Concluding it creates exactly one fact (`to_fact_id`). Completion is a concluded intent whose `to_fact_id = "goal"`. Edges live in `intent_sources` and `intents.to_fact_id`.
+- **Graph:** `origin ─► Intent ─► Fact ─► Intent ─► … ─► goal`. An intent must cite source facts (`from`). Concluding it creates exactly one fact (`to_fact_id`). Completion is a concluded intent whose `to_fact_id = "goal"`. Edges live in `intent_sources` and `intents.to_fact_id`. A fact claimed directly may cite the facts it builds on (`fact_claim.from`, stored in `fact_sources`, validated like intent sources); that gives sequential work a connected chain without intents. `fact_sources` is created by `SCHEMA` when a writer opens a board, so `snapshotFrom` must keep tolerating boards that lack it.
 - **The coordination rules are enforced in `board.ts`, not in prompts:**
   - **Reason lease:** only one holder at a time. Only the holder can call `intent_create`, capped by `FACT_BOARD_MAX_INTENTS` per pass (default 2).
   - **Intent lease:** `intent_claim` returns a `lease_token`. Heartbeat, conclude and release are compare-and-swap on that token: `UPDATE … WHERE id=? AND status='claimed' AND lease_token=?`.

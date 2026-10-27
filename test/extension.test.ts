@@ -93,6 +93,18 @@ test("board_init tells the agent how to record work and which project to pass", 
   expect(unscoped.next).not.toContain("project:");
 });
 
+test("fact_claim takes `from` as comma-separated ids and reports a bad source as an error result", async () => {
+  process.env.FACT_BOARD_DB = join(dir, "from-board.db");
+  const { tools } = await loadInstance("from");
+  const call = async (name: string, params: Record<string, unknown>) => JSON.parse((await tools[name].execute("t", params)).content[0].text);
+  await call("board_init", { origin: "o", goal: "g", project: "p" });
+  const first = await call("fact_claim", { text: "one", from: "origin", project: "p" });
+  const second = await call("fact_claim", { text: "two", from: ` ${first.id} , origin`, project: "p" });
+  const exported = await call("board_export", { project: "p" });
+  expect(exported.facts.find((f: { id: string }) => f.id === second.id).from).toEqual([first.id, "origin"]);
+  expect((await call("fact_claim", { text: "three", from: "f_missing", project: "p" })).error).toContain("unknown source fact");
+});
+
 test("/fact-board start upgrades an existing 0.1 board so the read-only viewer can show it", async () => {
   process.env.FACT_BOARD_PORT = "0";
   process.env.FACT_BOARD_DB = join(dir, "legacy-board.db");

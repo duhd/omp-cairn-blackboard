@@ -62,7 +62,7 @@ function run(fn: () => unknown) {
 function nextSteps(project: string | undefined): string {
   const scope = project ? ` Pass project: "${project}" on every board tool call, otherwise it writes to the default board.` : "";
   return (
-    "The board records nothing automatically. Record each confirmed finding or finished milestone with fact_claim (text, evidence)." +
+    "The board records nothing automatically. Record each confirmed finding or finished milestone with fact_claim (text, evidence, and `from`: the fact ids it builds on, \"origin\" for the first), so the graph shows how the work progressed." +
     " To split work, take the Reason lease (reason_claim), then intent_create from \"origin\" or fact ids, and have a worker intent_claim and intent_conclude it." +
     " Anyone can watch the graph with /fact-board." +
     scope
@@ -106,11 +106,11 @@ export default function blackboard(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "fact_claim",
     description:
-      "Record a finding directly (bootstrap only). Explorers should use intent_conclude instead, which also records provenance. Idempotent: identical text returns the existing fact.",
-    parameters: z.object({ text: z.string(), claimed_by: z.string().optional(), evidence: z.string().optional(), project }),
+      "Record a confirmed finding or finished milestone. `from` lists the fact ids it builds on (comma-separated or a JSON array; \"origin\" for the first), which draws its edges in the graph; without it the fact floats unconnected. Work done by a worker on an intent should use intent_conclude instead, which records provenance through the intent. Idempotent: identical text returns the existing fact (any new `from` ids are added).",
+    parameters: z.object({ text: z.string(), claimed_by: z.string().optional(), evidence: z.string().optional(), from: z.string().optional(), project }),
     async execute(_id, params) {
       return run(() =>
-        boardFor(params.project).claimFact({ text: params.text, claimedBy: params.claimed_by, evidence: params.evidence }),
+        boardFor(params.project).claimFact({ text: params.text, claimedBy: params.claimed_by, evidence: params.evidence, from: params.from ? parseIdList(params.from) : undefined }),
       );
     },
   });

@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Board, BoardError, listBoards, listProjects, parseIdList, projectDbPath, readSnapshot } from "../src/board";
-import type { BoardOptions } from "../src/board";
+import type { BoardOptions, Snapshot } from "../src/board";
 import redactOutput from "../src/redact-output";
 import { redactText } from "../src/redact";
 import { startViewer } from "../src/viewer";
@@ -295,6 +296,47 @@ describe("facts", () => {
     expect(disputed.status).toBe("disputed");
     expect(disputed.evidence).toBe("curl 200 [disputed: false positive, api_key=[REDACTED]]");
     expectRule(() => board.disputeFact("f_missing"), "fact not found");
+  });
+
+  test("a directly claimed fact records the facts it builds on, and a repeat claim adds new sources", () => {
+    const board = newBoard();
+    board.init({ origin: "o", goal: "g" });
+    const sourcesOf = (id: string) => (JSON.parse(board.export()) as Snapshot).facts.find(f => f.id === id)?.from;
+    const first = board.claimFact({ text: "branch created", from: ["origin"] });
+    const second = board.claimFact({ text: "conflicts resolved", from: [first.id] });
+    expect(sourcesOf(second.id)).toEqual([first.id]);
+    const repeat = board.claimFact({ text: "conflicts resolved", claimedBy: "other", from: ["origin"] });
+    expect([repeat.id, repeat.claimed_by]).toEqual([second.id, "unknown"]);
+    expect(sourcesOf(second.id)).toEqual([first.id, "origin"]);
+    expect(board.export("timeline")).toContain(`from: ${first.id}, origin`);
+  });
+
+  test("fact sources follow the same rules as intent sources", () => {
+    const board = newBoard();
+    board.init({ origin: "o", goal: "g" });
+    const wrong = board.claimFact({ text: "wrong finding" });
+    board.disputeFact(wrong.id);
+    expectRule(() => board.claimFact({ text: "a", from: ["f_missing"] }), "unknown source fact");
+    expectRule(() => board.claimFact({ text: "b", from: [wrong.id] }), "disputed");
+    expectRule(() => board.claimFact({ text: "c", from: ["goal"] }), "cannot be used as a source");
+    // A fact that already exists cannot cite itself when it is claimed again.
+    const existing = board.claimFact({ text: "d" });
+    expectRule(() => board.claimFact({ text: "d", from: [existing.id] }), "its own source");
+    // None of the rejected claims left a row behind.
+    expect(board.queryFacts().map(f => f.text)).toEqual(["d", "wrong finding"]);
+  });
+
+  test("a board written before fact sources existed is still readable, with no sources", () => {
+    const path = join(tempDir("blackboard-nofs-"), "board.db");
+    const board = newBoard({}, path);
+    board.init({ origin: "o", goal: "g" });
+    board.claimFact({ text: "kept", from: ["origin"] });
+    const raw = new Database(path);
+    raw.exec("DROP TABLE fact_sources");
+    raw.close();
+    const snapshot = readSnapshot(path);
+    if ("missing" in snapshot || "legacy" in snapshot) throw new Error("board should be readable");
+    expect(snapshot.facts.map(f => [f.text, f.from])).toEqual([["kept", []]]);
   });
 
   test("query pages and treats LIKE wildcards literally", () => {

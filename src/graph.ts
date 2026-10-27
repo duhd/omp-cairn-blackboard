@@ -76,6 +76,10 @@ export function buildGraph(snapshot: Snapshot, now: number): Graph {
   }
 
   const edges: GraphEdge[] = [];
+  // Facts claimed directly cite the facts they build on; without intents these are the only edges in sequential work.
+  for (const fact of snapshot.facts) {
+    for (const source of fact.from) if (info.has(source) && source !== fact.id) edges.push({ from: source, to: fact.id });
+  }
   for (const intent of intents) {
     for (const source of intent.from) if (info.has(source)) edges.push({ from: source, to: intent.id });
     if (intent.to_fact_id && info.has(intent.to_fact_id)) edges.push({ from: intent.id, to: intent.to_fact_id });

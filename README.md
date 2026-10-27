@@ -55,7 +55,7 @@ Ask the agent to investigate something open-ended with `cairn-search`, or drive 
 - `intent_claim` returns a **lease token**. `intent_heartbeat`, `intent_conclude` and `intent_release` are compare-and-swap on that token: a worker whose lease was reclaimed can never overwrite its successor, and its rejected `intent_conclude` creates no fact.
 - A claimed intent whose lease goes stale reopens automatically, so a dead subagent never wedges the board.
 - Rejections are structured: tool errors carry a `code` (`intent_claimed`, `lease_lost`, `invalid_transition`, `reason_held`, …) plus `held_by` and `lease_expires_at` when a lease is involved, so a worker can tell a transient refusal from a permanent one.
-- `fact_claim` is idempotent (same text → same id). `fact_dispute` marks a fact wrong; disputed facts cannot be cited as sources.
+- `fact_claim` is idempotent (same text → same id; a repeat claim keeps the first row and adds any new `from` ids). `from` lists the facts it builds on (`"origin"` for the first), which draws its edges in the graph; without it the fact floats unconnected. `fact_dispute` marks a fact wrong; disputed facts cannot be cited as sources.
 
 ## Watching the board
 

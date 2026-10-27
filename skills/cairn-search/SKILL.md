@@ -13,7 +13,7 @@ Turn an open-ended problem into a directed search over a shared **fact board**. 
 
 ## The graph
 
-- **Fact** — a confirmed finding (`fact_claim`, `fact_query`, `fact_dispute`). Produced by concluding an intent, or claimed directly while bootstrapping.
+- **Fact** — a confirmed finding (`fact_claim`, `fact_query`, `fact_dispute`). Produced by concluding an intent, or claimed directly. A directly claimed fact should cite the facts it builds on with `from` (`"origin"` for the first), so sequential milestones draw a connected chain.
 - **Intent** — a step into the unknown (`intent_create` → `intent_claim` → `intent_conclude` / `intent_release`). It cites the facts it grows from (`from`) and, when concluded, produces exactly one fact (`to`).
 - **Hint** — human steering (`hint_write` / `hint_query`); handed to a worker when it claims an intent.
 

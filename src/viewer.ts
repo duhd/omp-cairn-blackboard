@@ -208,6 +208,7 @@ function renderList(d) {
     var c = card(f, f.status, f.text, f.created_at, now, f.claimed_by);
     if (f.evidence) c.appendChild(el("div", "ev", f.evidence));
     if (f.produced_by.length) c.appendChild(edgeChips("produced by ", f.produced_by));
+    if (f.from && f.from.length) c.appendChild(edgeChips("from ", f.from));
     return c;
   }), "No facts yet.");
   var cols = document.getElementById("intents"); cols.replaceChildren();
