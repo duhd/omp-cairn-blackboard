@@ -11,6 +11,8 @@ export interface GraphCounts {
   hints: number;
   /** Intents not yet concluded (open or claimed). */
   live: number;
+  /** Intents a worker holds right now. */
+  claimed: number;
   /** Ids of open intents nobody holds. */
   unclaimed: string[];
 }
@@ -20,7 +22,7 @@ export interface Checkpoint {
   facts: number;
   hints: number;
   live: number;
-  /** Unclaimed intents already announced, so each is announced once. */
+  /** Open intents already announced, so each is announced once while it stays open. */
   announced: Record<string, true>;
 }
 
@@ -35,8 +37,11 @@ const shortId = (id: string): string => id.slice(0, 8);
 export function dispatchAdvice(cp: Checkpoint | undefined, now: GraphCounts, project: string): { advice?: string; next: Checkpoint } {
   const scope = project ? `project "${project}"` : "the default board";
   const base: Checkpoint = cp ?? { facts: now.facts, hints: now.hints, live: now.live, announced: {} };
-  const fresh = now.unclaimed.filter(id => !base.announced[id]);
-  const announced: Record<string, true> = { ...base.announced };
+  // An intent that left the open set (claimed, concluded) is forgotten, so one released back to open, by
+  // intent_release or an expired lease, is announced again: that retry is when staffing matters most.
+  const announced: Record<string, true> = {};
+  for (const id of now.unclaimed) if (base.announced[id]) announced[id] = true;
+  const fresh = now.unclaimed.filter(id => !announced[id]);
   for (const id of fresh) announced[id] = true;
   if (fresh.length > 0) {
     return {
@@ -46,7 +51,10 @@ export function dispatchAdvice(cp: Checkpoint | undefined, now: GraphCounts, pro
       next: { ...base, live: now.live, announced },
     };
   }
-  if (!cp) return { next: base };
+  if (!cp) return { next: { ...base, announced } };
+  // Cairn caps workers per project; here the controller could act on half the results. While workers still hold
+  // intents, keep the old counts so the Reason prompt fires once they finish, with everything they found.
+  if (now.claimed > 0) return { next: { ...cp, announced } };
   const changes: string[] = [];
   if (now.facts > cp.facts) changes.push(`facts ${cp.facts}->${now.facts}`);
   if (now.hints > cp.hints) changes.push(`hints ${cp.hints}->${now.hints}`);

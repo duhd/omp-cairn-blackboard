@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { type GraphCounts, dispatchAdvice } from "../src/dispatch";
 
-const counts = (c: Partial<GraphCounts>): GraphCounts => ({ facts: 0, hints: 0, live: 0, unclaimed: [], ...c });
+const counts = (c: Partial<GraphCounts>): GraphCounts => ({ facts: 0, hints: 0, live: 0, claimed: 0, unclaimed: [], ...c });
 
 test("the first look records counts without asking for Reason", () => {
   const { advice, next } = dispatchAdvice(undefined, counts({ facts: 3, live: 1 }), "p");
@@ -45,4 +45,19 @@ test("an unchanged graph gives no advice, and advice is not repeated", () => {
   expect(dispatchAdvice(cp, counts({ facts: 1 }), "p").advice).toBeUndefined();
   const after = dispatchAdvice(cp, counts({ facts: 2 }), "p").next;
   expect(dispatchAdvice(after, counts({ facts: 2 }), "p").advice).toBeUndefined();
+});
+
+test("no Reason prompt while a worker still holds an intent; it fires once they all finish", () => {
+  const cp = dispatchAdvice(undefined, counts({ live: 2, claimed: 2 }), "p").next;
+  const mid = dispatchAdvice(cp, counts({ facts: 1, live: 1, claimed: 1 }), "p");
+  expect(mid.advice).toBeUndefined();
+  const done = dispatchAdvice(mid.next, counts({ facts: 2, live: 0, claimed: 0 }), "p");
+  expect(done.advice).toContain("facts 0->2");
+  expect(done.advice).toContain("open intents 2->0");
+});
+
+test("an intent released back to open is announced again", () => {
+  let cp = dispatchAdvice(undefined, counts({ live: 1, unclaimed: ["i-1"] }), "p").next;
+  cp = dispatchAdvice(cp, counts({ live: 1, claimed: 1 }), "p").next;
+  expect(dispatchAdvice(cp, counts({ live: 1, unclaimed: ["i-1"] }), "p").advice).toContain("intent_claim");
 });

@@ -69,6 +69,7 @@ function dispatchFor(sessionId: string, now: number): string[] {
       facts: snap.facts.length,
       hints: snap.hints.length,
       live: snap.intents.filter(i => i.status !== "concluded").length,
+      claimed: snap.intents.filter(i => i.status === "claimed").length,
       unclaimed: snap.intents.filter(i => i.status === "open").map(i => i.id),
     };
     const { advice, next } = dispatchAdvice(shared.checkpoints.get(key), counts, project);
@@ -343,10 +344,15 @@ export default function blackboard(pi: ExtensionAPI): void {
     // Only the main session is nudged: a subagent's reply goes to its parent, not to a person who can act on it.
     if (ctx.agent.kind !== "main") return;
     const now = Date.now();
-    const nudge = nudgeOnCall(shared.nudges, sessionId, event.toolName, now);
-    if (nudge) pi.sendMessage({ customType: "cairn-nudge", display: true, content: nudge }, { deliverAs: "aside" });
-    for (const advice of dispatchFor(sessionId, now)) {
-      pi.sendMessage({ customType: "cairn-dispatch", display: true, content: advice }, { deliverAs: "aside" });
+    // Like a throwing read, a failing send would block the agent's real tool call; reminders are optional.
+    try {
+      const nudge = nudgeOnCall(shared.nudges, sessionId, event.toolName, now);
+      if (nudge) pi.sendMessage({ customType: "cairn-nudge", display: true, content: nudge }, { deliverAs: "aside" });
+      for (const advice of dispatchFor(sessionId, now)) {
+        pi.sendMessage({ customType: "cairn-dispatch", display: true, content: advice }, { deliverAs: "aside" });
+      }
+    } catch {
+      // nothing to do: the next tool call tries again
     }
   });
   pi.on("session.compacting", event => {
