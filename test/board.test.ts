@@ -576,7 +576,7 @@ describe("viewer", () => {
       expect(data.graph.edges).toContainEqual({ from: "origin", to: intent.id });
       expect(data.graph.nodes.find((n: { id: string }) => n.id === intent.id).status).toBe("claimed");
       expect(data.truncated).toBe(false);
-      expect(data.projects).toEqual(["alpha"]);
+      expect(data.projects).toEqual([{ name: "alpha", status: "legacy" }]);
       const alpha = await (await fetch(`${viewer.url}/api/board?project=alpha`)).json();
       expect(alpha.facts.map((f: { text: string }) => f.text)).toEqual(["alpha finding"]);
       expect((await (await fetch(`${viewer.url}/api/board?project=../x`)).json()).note).toContain("invalid project name");

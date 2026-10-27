@@ -8,7 +8,7 @@
  * Lease tokens are never selected. Board text comes from agents, so both the HTML list and the SVG graph render
  * it with textContent only, and the page loads nothing from the network.
  */
-import { listProjects, projectDbPath, readSnapshot, resolveDbPath } from "./board";
+import { listBoards, listProjects, projectDbPath, readSnapshot, resolveDbPath } from "./board";
 import { buildGraph } from "./graph";
 
 export interface ViewerHandle {
@@ -19,7 +19,8 @@ export interface ViewerHandle {
 const SNAPSHOT_LIMIT = 500;
 
 function boardPayload(basePath: string, project: string | null) {
-  const projects = listProjects(basePath);
+  const status = Object.fromEntries(listBoards(basePath).map(b => [b.project, b.status]));
+  const projects = listProjects(basePath).map(name => ({ name, status: status[name] ?? "legacy" }));
   const now = Date.now();
   const base = { project, projects, now };
   try {
@@ -56,6 +57,7 @@ input[type=search]{flex:1;min-width:160px}
 button{padding:6px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer}
 .tabs{display:inline-flex;border:1px solid var(--bd);border-radius:6px;overflow:hidden}
 .tabs button{border:0;border-radius:0}.tabs button.on{background:var(--acc);color:#fff}
+.toggle{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--mut);cursor:pointer;white-space:nowrap}
 .meta{color:var(--mut);font-size:12px}main{padding:14px 16px;max-width:1400px;margin:0 auto}
 .banner{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;margin-bottom:12px;display:grid;gap:4px}
 .banner.done{border-color:var(--ok)}.banner .k{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-right:6px}
@@ -111,6 +113,7 @@ section{margin-bottom:22px}h2{font-size:13px;text-transform:uppercase;letter-spa
 <header>
   <h1>Fact board</h1><span id="dot" class="dot"></span>
   <select id="project" aria-label="Board"></select>
+  <label class="toggle"><input id="showDone" type="checkbox"> completed</label>
   <div class="tabs" role="tablist"><button id="tabList" role="tab">List</button><button id="tabGraph" role="tab">Graph</button></div>
   <input id="q" type="search" placeholder="Filter by text, worker, id, status…" aria-label="Filter">
   <button id="pause">Pause</button>
@@ -139,7 +142,7 @@ section{margin-bottom:22px}h2{font-size:13px;text-transform:uppercase;letter-spa
 </main>
 <script>
 var params = new URLSearchParams(location.search);
-var state = { paused: false, filter: "", first: true, data: null, seen: {}, project: params.get("project") || "", view: params.get("view") === "graph" ? "graph" : "list" };
+var state = { paused: false, filter: "", first: true, data: null, seen: {}, project: params.get("project") || "", view: params.get("view") === "graph" ? "graph" : "list", showDone: false };
 var SVGNS = "http://www.w3.org/2000/svg";
 var gs = { sig: "", view: null, bounds: null, moved: false, nw: 220, nh: 58 };
 var graphEl = document.getElementById("graph");
@@ -349,7 +352,9 @@ function render() {
 }
 function renderProjects(d) {
   var sel = document.getElementById("project");
-  var names = [""].concat(d.projects || []);
+  // Completed boards are hidden by default: they are history, not work in progress. The selected one always stays,
+  // so a URL pointing at a completed board still works with the toggle off.
+  var names = [""].concat((d.projects || []).filter(function (p) { return state.showDone || p.status !== "completed" || p.name === state.project; }).map(function (p) { return p.name; }));
   if (sel.dataset.names === names.join("|") && sel.value === state.project) return;
   sel.replaceChildren();
   names.forEach(function (n) { var o = el("option", "", n || "(default)"); o.value = n; sel.appendChild(o); });
@@ -386,6 +391,7 @@ document.getElementById("tabList").onclick = function () { showTab("list"); };
 document.getElementById("tabGraph").onclick = function () { showTab("graph"); };
 document.getElementById("fit").onclick = function () { fit(); };
 document.getElementById("q").addEventListener("input", function (e) { state.filter = e.target.value.trim().toLowerCase(); render(); });
+document.getElementById("showDone").addEventListener("change", function (e) { state.showDone = e.target.checked; render(); });
 document.getElementById("pause").onclick = function () { state.paused = !state.paused; this.textContent = state.paused ? "Resume" : "Pause"; document.getElementById("dot").className = state.paused ? "dot paused" : "dot"; if (!state.paused) poll(); };
 showTab(state.view);
 poll(); setInterval(poll, 2000);
