@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Board, BoardError, listBoards, listProjects, parseIdList, projectDbPath, readSnapshot } from "../src/board";
+import type { Snapshot } from "../src/board";
 import type { BoardOptions, Snapshot } from "../src/board";
 import redactOutput from "../src/redact-output";
 import { redactText } from "../src/redact";
@@ -236,12 +237,34 @@ describe("intent lease (compare-and-swap)", () => {
 });
 
 describe("completion", () => {
+  test("complete reports intents left open or claimed instead of blocking", () => {
+    const { board, reason_token } = started();
+    const a = board.createIntent({ description: "abandoned", from: ["origin"], reasonToken: reason_token });
+    const b = board.createIntent({ description: "still running", from: ["origin"], reasonToken: reason_token });
+    board.claimIntent(b.id, "w1");
+    const { intent, unfinished } = board.complete({ from: ["origin"], description: "done", worker: "controller" });
+    expect(intent.to_fact_id).toBe("goal");
+    expect(unfinished.map(u => u.id).sort()).toEqual([a.id, b.id].sort());
+    expect(unfinished.map(u => u.status).sort()).toEqual(["claimed", "open"]);
+  });
+
+  test("floating and unknown facts are surfaced by the snapshot", () => {
+    const { board } = started();
+    const rooted = board.claimFact({ text: "rooted", claimedBy: "controller", from: ["origin"] });
+    const floating = board.claimFact({ text: "dangling" });
+    const snapshot = readSnapshot(board.path) as Snapshot;
+    expect(snapshot.floatingFacts).toContain(floating.id);
+    expect(snapshot.floatingFacts).not.toContain(rooted.id);
+    expect(snapshot.unknownFacts).toContain(floating.id);
+    expect(snapshot.unknownFacts).not.toContain(rooted.id);
+  });
+
   test("complete links the goal to its supporting facts, freezes the board, and reopen undoes it", () => {
     const { board, reason_token } = started();
     const intent = board.createIntent({ description: "probe", from: ["origin"], reasonToken: reason_token });
     const { lease_token } = board.claimIntent(intent.id, "w1");
     const { fact } = board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "pool exhausted under load" });
-    const done = board.complete({ from: [fact.id], description: "pool exhaustion causes the 500s", worker: "controller" });
+    const done = board.complete({ from: [fact.id], description: "pool exhaustion causes the 500s", worker: "controller" }).intent;
     expect(done.to_fact_id).toBe("goal");
     expect(done.from).toEqual([fact.id]);
     expect(board.info().status).toBe("completed");

@@ -93,6 +93,12 @@ export interface Snapshot {
   facts: FactView[];
   intents: IntentView[];
   hints: HintRow[];
+  /** Facts that cite no source and were produced by no intent: they dangle in the graph. */
+  floatingFacts: string[];
+  /** Facts whose provenance is lost (written by `fact_claim` without a name). */
+  unknownFacts: string[];
+  /** Intent→fact and fact→fact edges in this snapshot. */
+  edges: number;
 }
 
 export interface ReasonLease {
@@ -650,13 +656,22 @@ export class Board {
 
   // ── completion ─────────────────────────────────────────────────────────────
 
-  /** Reaches the goal: a completion intent grows from the supporting facts and produces "goal". */
-  complete(input: { from: readonly string[]; description: string; worker: string }): IntentView {
+  /**
+   * Reaches the goal: a completion intent grows from the supporting facts and produces "goal". Cairn does not
+   * refuse to complete because work is outstanding, so neither does this; leftover intents are reported instead,
+   * because a board closed over an abandoned intent hides that the question was never answered.
+   */
+  complete(input: { from: readonly string[]; description: string; worker: string }): { intent: IntentView; unfinished: Array<{ id: string; status: IntentStatus; description: string }> } {
     return this.write(() => {
       this.expireStale();
       this.assertActive();
       this.requireInit();
       const sources = this.validateSources(input.from);
+      const unfinished = this.db
+        .query<{ id: string; status: IntentStatus; description: string }, []>(
+          "SELECT id, status, description FROM intents WHERE status IN ('open','claimed') ORDER BY created_at",
+        )
+        .all();
       const id = crypto.randomUUID();
       const now = this.now();
       this.db
@@ -669,7 +684,7 @@ export class Board {
       this.setMeta("status", "completed");
       this.setMeta("completed_intent", id);
       this.clearReason();
-      return this.view(this.requireIntent(id));
+      return { intent: this.view(this.requireIntent(id)), unfinished };
     });
   }
 
@@ -773,7 +788,11 @@ export function snapshotFrom(db: Database, limit: number, leaseMs = envNumber("F
     .all(limit)
     .map(row => ({ ...row, produced_by: producers.get(row.id) ?? [], from: factSources.get(row.id) ?? [] }));
   const hints = db.query<HintRow, [number]>("SELECT * FROM hints ORDER BY created_at DESC LIMIT ?").all(limit);
-  return { board: infoFrom(db), facts, intents, hints };
+  // A fact with no source and no producing intent hangs off the graph: it cannot be traced to anything.
+  const floatingFacts = facts.filter(f => f.produced_by.length === 0 && f.from.length === 0).map(f => f.id);
+  const unknownFacts = facts.filter(f => f.claimed_by === "unknown").map(f => f.id);
+  const edges = facts.reduce((n, f) => n + f.from.length, 0) + intents.reduce((n, i) => n + (i.to_fact_id ? 1 : 0) + i.from.length, 0);
+  return { board: infoFrom(db), facts, intents, hints, floatingFacts, unknownFacts, edges };
 }
 
 /**
@@ -805,6 +824,8 @@ export interface BoardSummary {
   goal: string | null;
   facts: number;
   intents: number;
+  /** Intent→fact and fact→fact edges; many nodes with few edges means mostly disconnected findings. */
+  edges: number;
   /** Newest fact, intent update or hint, or the board's creation when it has none. */
   last_activity: number | null;
 }
@@ -827,7 +848,7 @@ export function listBoards(basePath: string): BoardSummary[] {
     if (!board.initialized) continue;
     const stamps = [board.created_at, ...snapshot.facts.map(f => f.created_at), ...snapshot.intents.map(i => i.updated_at), ...snapshot.hints.map(h => h.created_at)];
     const last = Math.max(0, ...stamps.filter((t): t is number => t !== null));
-    summaries.push({ project, status: board.status, origin: board.origin, goal: board.goal, facts: snapshot.facts.length, intents: snapshot.intents.length, last_activity: last || null });
+    summaries.push({ project, status: board.status, origin: board.origin, goal: board.goal, facts: snapshot.facts.length, intents: snapshot.intents.length, edges: snapshot.edges, last_activity: last || null });
   }
   const rank = (s: BoardSummary) => (s.status === "active" ? 0 : 1);
   return summaries.sort((a, b) => rank(a) - rank(b) || (b.last_activity ?? 0) - (a.last_activity ?? 0));
@@ -839,6 +860,9 @@ function chronological(snapshot: Snapshot): Snapshot {
     facts: [...snapshot.facts].reverse(),
     intents: [...snapshot.intents].reverse(),
     hints: [...snapshot.hints].reverse(),
+    floatingFacts: snapshot.floatingFacts,
+    unknownFacts: snapshot.unknownFacts,
+    edges: snapshot.edges,
   };
 }
 

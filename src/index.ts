@@ -162,9 +162,14 @@ export default function blackboard(pi: ExtensionAPI): void {
       "Record a confirmed finding or finished milestone. `from` lists the fact ids it builds on (comma-separated or a JSON array; \"origin\" for the first), which draws its edges in the graph; without it the fact floats unconnected. Work done by a worker on an intent should use intent_conclude instead, which records provenance through the intent. Idempotent: identical text returns the existing fact (any new `from` ids are added).",
     parameters: z.object({ text: z.string(), claimed_by: z.string().optional(), evidence: z.string().optional(), from: z.string().optional(), project }),
     async execute(_id, params) {
-      return run(() =>
-        boardFor(params.project).claimFact({ text: params.text, claimedBy: params.claimed_by, evidence: params.evidence, from: params.from ? parseIdList(params.from) : undefined }),
-      );
+      return run(() => {
+        const fact = boardFor(params.project).claimFact({ text: params.text, claimedBy: params.claimed_by, evidence: params.evidence, from: params.from ? parseIdList(params.from) : undefined });
+        // Provenance is the point of the board: a nameless or unsourced fact cannot be traced or placed in the graph.
+        const warnings: string[] = [];
+        if (!params.claimed_by) warnings.push('claimed_by is empty, so this fact is recorded as "unknown": pass the worker name');
+        if (!params.from) warnings.push('no `from`: this fact hangs unconnected; cite the facts it builds on, or "origin"');
+        return warnings.length > 0 ? { ...fact, warnings } : fact;
+      });
     },
   });
 
@@ -270,9 +275,10 @@ export default function blackboard(pi: ExtensionAPI): void {
     description: "Declare the goal reached, citing the facts that prove it (from = comma-separated fact ids, or a JSON array). Ends the board.",
     parameters: z.object({ from: z.string(), description: z.string(), worker: z.string(), project }),
     async execute(_id, params) {
-      return run(() =>
-        boardFor(params.project).complete({ from: parseIdList(params.from), description: params.description, worker: params.worker }),
-      );
+      return run(() => {
+        const { intent, unfinished } = boardFor(params.project).complete({ from: parseIdList(params.from), description: params.description, worker: params.worker });
+        return { ...intent, unfinished };
+      });
     },
   });
 

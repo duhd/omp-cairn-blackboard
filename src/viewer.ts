@@ -42,7 +42,7 @@ function boardPayload(basePath: string, project: string | null) {
     const truncated = read.facts.length > SNAPSHOT_LIMIT || read.intents.length > SNAPSHOT_LIMIT;
     // The graph does not draw hints, so their overflow is reported separately, for the list only.
     const hintsTruncated = read.hints.length > SNAPSHOT_LIMIT;
-    const snapshot = { board: read.board, facts: read.facts.slice(0, SNAPSHOT_LIMIT), intents: read.intents.slice(0, SNAPSHOT_LIMIT), hints: read.hints.slice(0, SNAPSHOT_LIMIT) };
+    const snapshot = { board: read.board, facts: read.facts.slice(0, SNAPSHOT_LIMIT), intents: read.intents.slice(0, SNAPSHOT_LIMIT), hints: read.hints.slice(0, SNAPSHOT_LIMIT), floatingFacts: read.floatingFacts, unknownFacts: read.unknownFacts, edges: read.edges };
     return { ...base, dbPath: path, ...snapshot, truncated, hintsTruncated, limit: SNAPSHOT_LIMIT, graph: buildGraph(snapshot, now) };
   } catch (err) {
     return { ...base, note: `read failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -200,6 +200,8 @@ function renderBanner(d) {
   b.appendChild(line("origin", info.origin));
   b.appendChild(line("goal", info.goal));
   if (info.reason) b.appendChild(line("reason lease", info.reason.worker + " · declared " + info.reason.created + " · heartbeat " + ago(info.reason.heartbeat_at, d.now)));
+  if (d.floatingFacts && d.floatingFacts.length) b.appendChild(line("floating facts", d.floatingFacts.length + " cite no source and come from no intent — " + d.floatingFacts.slice(0, 3).map(short).join(", ") + (d.floatingFacts.length > 3 ? "…" : "")));
+  if (d.unknownFacts && d.unknownFacts.length) b.appendChild(line("unknown provenance", d.unknownFacts.length + " recorded with no worker name"));
   if (info.completed_intent) b.appendChild(edgeChips("completed via ", [info.completed_intent]));
 }
 

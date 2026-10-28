@@ -66,7 +66,7 @@ describe("graph layout", () => {
     const board = newBoard();
     board.init({ origin: "o", goal: "g" });
     const { fact } = explore(board, ["origin"], "root cause is pool exhaustion");
-    const completion = board.complete({ from: [fact.id], description: "pool exhaustion", worker: "controller" });
+    const completion = board.complete({ from: [fact.id], description: "pool exhaustion", worker: "controller" }).intent;
     const graph = buildGraph(snapshotOf(board), Date.now());
 
     expect(node(graph, "goal").status).toBe("reached");
