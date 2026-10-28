@@ -109,6 +109,24 @@ function run(fn: () => unknown) {
 }
 
 /**
+ * Whether a new project name looks like a continuation of an existing board: the same leading token (e.g. an
+ * advisory id) or a goal that repeats most of the same words. Deliberately loose, because it only produces a
+ * warning, never a refusal.
+ */
+function overlaps(project: string, other: string, otherGoal: string): boolean {
+  // The leading token pair names the family: `ghsa-w4c7-impact`, `ghsa-w4c7-backport` and `ghsa-w4c7-prod` are one task.
+  const lead = (s: string) => s.toLowerCase().split(/[-_.]/).filter(Boolean).slice(0, 2).join("-");
+  if (project && other && lead(project) === lead(other)) return true;
+  if (!project || !other) return false;
+  const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 3));
+  const a = words(project);
+  const b = words(`${other} ${otherGoal}`);
+  let shared = 0;
+  for (const w of a) if (b.has(w)) shared++;
+  return a.size > 0 && shared / a.size >= 0.6;
+}
+
+/**
  * What a freshly initialized board needs from the agent. The board records nothing by itself: an agent that
  * only calls board_init leaves the graph (and the viewer) empty, so say what to do next and which `project` to pass.
  */
@@ -132,7 +150,20 @@ export default function blackboard(pi: ExtensionAPI): void {
       "Start a board: declare the origin (what is known) and the goal (the success condition). Required before intents. Idempotent for identical values. The result includes a `next` field saying how to record work on the board.",
     parameters: z.object({ origin: z.string(), goal: z.string(), project }),
     async execute(_id, params) {
-      return run(() => ({ ...boardFor(params.project).init({ origin: params.origin, goal: params.goal }), next: nextSteps(params.project) }));
+      return run(() => {
+        // One task spread over several boards loses its history: the later board cannot cite the earlier facts, and
+        // a session that resumes sees only half the work. Say so when a new board looks like a split.
+        const others = listBoards(resolveDbPath())
+          .filter(b => b.project !== (params.project ?? "") && b.status === "active")
+          .filter(b => overlaps(params.project ?? "", b.project, b.goal ?? ""));
+        const init = boardFor(params.project).init({ origin: params.origin, goal: params.goal });
+        const result: Record<string, unknown> = { ...init, next: nextSteps(params.project) };
+        if (others.length > 0) {
+          result.overlapping = others.map(b => ({ project: b.project, facts: b.facts, goal: b.goal }));
+          result.warning = `${others.length} active board(s) look like the same task (${others.map(b => b.project).join(", ")}). Continue on one board instead of splitting the history, or say why this is a separate task.`;
+        }
+        return result;
+      });
     },
   });
 

@@ -107,6 +107,12 @@ export interface ReasonLease {
   created: number;
   max_intents: number;
   lease_expires_at: number;
+  /**
+   * The graph at claim time. A worker that takes the Reason lease is about to decide what to do next, and in
+   * practice it calls `reason_claim` without ever calling `board_export`; handing the state back here means the
+   * decision is made with the board in hand instead of relying on the caller to read it separately.
+   */
+  board: { facts: number; edges: number; open: string[]; claimed: Array<{ id: string; worker: string }>; floating: number; unknown: number; hints: number };
 }
 
 export interface ClaimedIntent {
@@ -398,6 +404,20 @@ export class Board {
 
   // ── Reason lease (who may declare intents) ─────────────────────────────────
 
+  /** The handful of numbers a Reason pass needs, without shipping the whole graph. */
+  private graphSummary(): ReasonLease["board"] {
+    const snap = snapshotFrom(this.db, 1_000_000, this.leaseMs);
+    return {
+      facts: snap.facts.length,
+      edges: snap.edges,
+      open: snap.intents.filter(i => i.status === "open").map(i => i.id),
+      claimed: snap.intents.filter(i => i.status === "claimed").map(i => ({ id: i.id, worker: i.claimed_by ?? "" })),
+      floating: snap.floatingFacts.length,
+      unknown: snap.unknownFacts.length,
+      hints: snap.hints.length,
+    };
+  }
+
   private reasonLease(): ReasonLease {
     return {
       reason_token: this.getMeta("reason_token") ?? "",
@@ -405,6 +425,7 @@ export class Board {
       created: Number(this.getMeta("reason_created") ?? 0),
       max_intents: this.maxIntents,
       lease_expires_at: Number(this.getMeta("reason_heartbeat_at") ?? 0) + this.leaseMs,
+      board: this.graphSummary(),
     };
   }
 
@@ -431,10 +452,17 @@ export class Board {
     });
   }
 
-  reasonRelease(reasonToken: string): { released: true } {
+  /**
+   * Gives the Reason lease back. `board_complete` already releases it, so a release that follows a completion is
+   * not an error: it reports `released: false` with a note instead of failing, which saves a wasted call and the
+   * "lease is not held" confusion that a stale token produces.
+   */
+  reasonRelease(reasonToken: string): { released: boolean; note?: string } {
     return this.write(() => {
       this.expireStale();
-      if (!reasonToken || this.getMeta("reason_token") !== reasonToken) {
+      const held = this.getMeta("reason_token");
+      if (!held) return { released: false, note: "the Reason lease is already released (board_complete does this)" };
+      if (!reasonToken || held !== reasonToken) {
         throw new BoardError("the Reason lease is not held with that token (it may have expired)");
       }
       this.clearReason();
