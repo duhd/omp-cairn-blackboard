@@ -11,6 +11,12 @@ A state-space-search **blackboard** for omp (oh-my-pi). It gives parallel subage
 | **`/fact-board`** (command) | A read-only live view of the graph, for watching long multi-subagent investigations. |
 | **`redact-output`** (optional feature) | Rewrites credential-shaped values in command/execution output (`bash`, `eval`) before it reaches the transcript. File reads and searches are left untouched. Off by default. |
 
+## Demo
+
+[![omp-cairn-blackboard demo](docs/demo-poster.png)](docs/omp-cairn-blackboard-demo.mp4)
+
+178 seconds, 1080p, no narration. It runs one real board from `origin` to `goal` — init, a first fact, the Reason lease, two intents, two workers, a refused claim, a hint, two conclusions, completion — then shows the dispatcher advice those states trigger and the `/fact-board` list and graph views of the finished board.
+
 ## The graph
 
 The board is a directed graph from `origin` (what is known) to `goal` (the success condition):
