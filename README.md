@@ -158,7 +158,7 @@ bun test          # graph, leases, dedup, redaction, migration, cross-process lo
 bun src/viewer.ts # run the viewer standalone (from the repo root)
 ```
 
-Layout: `src/board.ts` (graph + coordination), `src/index.ts` (extension: tools + `/fact-board`), `src/viewer.ts`, `src/graph.ts` (graph layout for the viewer), `src/redact.ts`, `src/redact-output.ts` (optional feature), `skills/cairn-search/SKILL.md`.
+Layout: `src/board.ts` (graph + coordination), `src/index.ts` (extension: tools + `/fact-board`), `src/viewer.ts`, `src/graph.ts` (graph layout for the viewer), `src/redact.ts`, `src/redact-output.ts` (optional feature), `skills/` (`cairn-search`, `dispatcher-check`, `update-version`).
 
 ## Uninstall
 
