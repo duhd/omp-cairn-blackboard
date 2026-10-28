@@ -140,6 +140,18 @@ describe("intent lease (compare-and-swap)", () => {
     expect(board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "late but valid" }).intent.status).toBe("concluded");
   });
 
+  test("an expired lease survives an intervening board read: slow work is not silently lost", () => {
+    let now = 1_000;
+    const board = newBoard({ leaseMs: 100, now: () => now });
+    board.init({ origin: "o", goal: "g" });
+    const { reason_token } = board.reasonClaim("controller");
+    const intent = board.createIntent({ description: "slow work", from: ["origin"], reasonToken: reason_token });
+    const { lease_token } = board.claimIntent(intent.id, "w1");
+    now += 500; // lease lapses
+    board.export(); // a read path runs expireStale, which must NOT reopen the intent
+    expect(board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "late but valid" }).intent.status).toBe("concluded");
+  });
+
   test("heartbeat keeps a lease alive past the timeout and fails once it is lost", () => {
     let now = 1_000;
     const board = newBoard({ leaseMs: 100, now: () => now });
@@ -251,12 +263,19 @@ describe("completion", () => {
   test("floating and unknown facts are surfaced by the snapshot", () => {
     const { board } = started();
     const rooted = board.claimFact({ text: "rooted", claimedBy: "controller", from: ["origin"] });
+    // No claimed_by while the Reason lease is held: attributed to the holder, so it is floating but not "unknown".
     const floating = board.claimFact({ text: "dangling" });
     const snapshot = readSnapshot(board.path) as Snapshot;
     expect(snapshot.floatingFacts).toContain(floating.id);
     expect(snapshot.floatingFacts).not.toContain(rooted.id);
-    expect(snapshot.unknownFacts).toContain(floating.id);
+    expect(snapshot.unknownFacts).not.toContain(floating.id);
     expect(snapshot.unknownFacts).not.toContain(rooted.id);
+
+    // "unknown" only when there is neither a claimed_by nor a held Reason lease.
+    const noLease = newBoard();
+    noLease.init({ origin: "o", goal: "g" });
+    const nameless = noLease.claimFact({ text: "nameless" });
+    expect((readSnapshot(noLease.path) as Snapshot).unknownFacts).toContain(nameless.id);
   });
 
   test("complete links the goal to its supporting facts, freezes the board, and reopen undoes it", () => {

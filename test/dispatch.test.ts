@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type GraphCounts, dispatchAdvice } from "../src/dispatch";
+import { type GraphCounts, dispatchAdvice, projectLeases } from "../src/dispatch";
 
 const counts = (c: Partial<GraphCounts>): GraphCounts => ({ facts: 0, hints: 0, live: 0, claimed: 0, unclaimed: [], ...c });
 
@@ -60,4 +60,17 @@ test("an intent released back to open is announced again", () => {
   let cp = dispatchAdvice(undefined, counts({ live: 1, unclaimed: ["i-1"] }), "p").next;
   cp = dispatchAdvice(cp, counts({ live: 1, claimed: 1 }), "p").next;
   expect(dispatchAdvice(cp, counts({ live: 1, unclaimed: ["i-1"] }), "p").advice).toContain("intent_claim");
+});
+
+test("an expired claim is projected as reclaimable, not held", () => {
+  const intents = [
+    { id: "a", status: "claimed", lease_expires_at: 100 }, // expired at now=200
+    { id: "b", status: "claimed", lease_expires_at: 300 }, // still live
+    { id: "c", status: "open", lease_expires_at: null },
+    { id: "d", status: "concluded", lease_expires_at: null },
+    { id: "e", status: "claimed", lease_expires_at: null }, // legacy claimed row, no heartbeat
+  ];
+  const { claimed, unclaimed } = projectLeases(intents, 200);
+  expect(claimed).toBe(1); // only "b" is a live claim
+  expect(unclaimed).toEqual(["a", "c", "e"]); // expired + open + legacy no-heartbeat claims are reclaimable
 });

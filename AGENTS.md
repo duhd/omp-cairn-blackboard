@@ -32,7 +32,7 @@ src/redact.ts ── shared regex rules ──► board.ts (redact before store)
 - **The coordination rules are enforced in `board.ts`, not in prompts:**
   - **Reason lease:** only one holder at a time. Only the holder can call `intent_create`, capped by `FACT_BOARD_MAX_INTENTS` per pass (default 2).
   - **Intent lease:** `intent_claim` returns a `lease_token`. Heartbeat, conclude and release are compare-and-swap on that token: `UPDATE … WHERE id=? AND status='claimed' AND lease_token=?`.
-  - **Stale leases:** `expireStale()` reopens claimed intents with no heartbeat for `FACT_BOARD_LEASE_SECONDS` (default 900).
+  - **Stale leases:** `expireStale()` only drops a stale Reason lease. A claimed intent whose lease lapses stays `claimed` so its owner can still conclude slow work; a new worker reclaims it in `claimIntent` via compare-and-swap on the prior holder (`heartbeat_at === null` also counts as reclaimable).
   - **Atomicity:** every mutation runs through `write()`, i.e. `db.transaction(fn).immediate()`. If `concludeIntent` fails, the transaction rolls back its fact insert too.
 - **Read paths never select `lease_token`.** Views strip it (`view()`), and `snapshotFrom` lists columns explicitly.
 
@@ -117,5 +117,5 @@ omp plugin features omp-cairn-blackboard --enable=redact-output
 ## Known Doc/Code Gaps (fix in code or docs, don't rely on the docs)
 
 - `board_complete` and `board_reopen` do not require the Reason lease. `fact_dispute` and `hint_write` skip `assertActive()`/`requireInit()`.
-- `board_export` is not a pure read: it runs `expireStale()` in a write transaction. The viewer uses `readSnapshot` instead.
+- `board_export` is not a pure read: it runs `expireStale()` in a write transaction (which now only clears a stale Reason lease — it no longer reopens intent leases). The viewer uses `readSnapshot` instead.
 - `concludeIntent` accepts an expired lease that no one has reclaimed. "no longer valid" means the lease was superseded or released, not that it timed out.

@@ -329,15 +329,10 @@ export class Board {
     });
   }
 
-  /** Reopens intents whose lease went stale and drops a stale Reason lease. */
+  /** Drops a stale Reason lease. A stale intent lease is NOT reopened here: it stays claimed so the original
+   *  worker can still conclude slow-but-not-dead work (only an actual reclaim in claimIntent supersedes it). */
   private expireStale(): void {
     const cutoff = this.now() - this.leaseMs;
-    this.db
-      .query(
-        `UPDATE intents SET status = 'open', claimed_by = NULL, lease_token = NULL, heartbeat_at = NULL, updated_at = ?
-         WHERE status = 'claimed' AND (heartbeat_at IS NULL OR heartbeat_at < ?)`,
-      )
-      .run(this.now(), cutoff);
     if (this.getMeta("reason_token") && !(Number(this.getMeta("reason_heartbeat_at")) >= cutoff)) this.clearReason();
   }
 
@@ -361,7 +356,7 @@ export class Board {
           `INSERT OR IGNORE INTO facts (id, text, status, claimed_by, evidence, created_at)
            VALUES (?, ?, 'claimed', ?, ?, ?)`,
         )
-        .run(id, text, input.claimedBy ?? "unknown", input.evidence ? redactText(input.evidence) : null, this.now());
+        .run(id, text, input.claimedBy ?? (this.getMeta("reason_worker") || "unknown"), input.evidence ? redactText(input.evidence) : null, this.now());
       // A repeated claim keeps its first row but may add sources it did not cite before.
       const insert = this.db.query("INSERT OR IGNORE INTO fact_sources (fact_id, source_id) VALUES (?, ?)");
       for (const source of sources) insert.run(id, source);
@@ -581,14 +576,31 @@ export class Board {
       this.assertActive();
       const row = this.requireIntent(id);
       if (row.status === "claimed") {
-        if (row.claimed_by !== worker) {
+        const expired = row.heartbeat_at === null || row.heartbeat_at < this.now() - this.leaseMs;
+        if (row.claimed_by === worker) {
+          // The owner asking again is a heartbeat, and gets its token back.
+          this.db.query("UPDATE intents SET heartbeat_at = ? WHERE id = ?").run(this.now(), id);
+          return this.claimResult(this.requireIntent(id));
+        }
+        if (!expired) {
           throw new BoardError(`intent ${id} is already claimed by ${row.claimed_by}`, {
             code: "intent_claimed",
             details: { held_by: row.claimed_by, lease_expires_at: this.expiresAt(row) },
           });
         }
-        // The owner asking again is a heartbeat, and gets its token back.
-        this.db.query("UPDATE intents SET heartbeat_at = ? WHERE id = ?").run(this.now(), id);
+        // The holder's lease went stale: reclaim it for this worker. CAS on the prior holder so two reclaimers
+        // cannot both win. (heartbeat_at === null — a legacy claimed row — is also treated as reclaimable.)
+        const now = this.now();
+        const { changes } = this.db
+          .query(
+            `UPDATE intents SET claimed_by = ?, lease_token = ?, heartbeat_at = ?, updated_at = ?
+             WHERE id = ? AND status = 'claimed' AND claimed_by = ?`,
+          )
+          .run(worker, crypto.randomUUID(), now, now, id, row.claimed_by);
+        if (changes === 0) {
+          const holder = this.getIntent(id)?.claimed_by;
+          throw new BoardError(`intent ${id} was reclaimed concurrently${holder ? ` by ${holder}` : ""}`);
+        }
         return this.claimResult(this.requireIntent(id));
       }
       if (row.status !== "open") {
@@ -689,7 +701,7 @@ export class Board {
    * refuse to complete because work is outstanding, so neither does this; leftover intents are reported instead,
    * because a board closed over an abandoned intent hides that the question was never answered.
    */
-  complete(input: { from: readonly string[]; description: string; worker: string }): { intent: IntentView; unfinished: Array<{ id: string; status: IntentStatus; description: string }> } {
+  complete(input: { from: readonly string[]; description: string; worker?: string }): { intent: IntentView; unfinished: Array<{ id: string; status: IntentStatus; description: string }> } {
     return this.write(() => {
       this.expireStale();
       this.assertActive();
@@ -707,7 +719,7 @@ export class Board {
           `INSERT INTO intents (id, description, status, created_by, claimed_by, lease_token, heartbeat_at, to_fact_id, created_at, updated_at)
            VALUES (?, ?, 'concluded', ?, ?, NULL, NULL, ?, ?, ?)`,
         )
-        .run(id, redactText(input.description), input.worker, input.worker, GOAL, now, now);
+        .run(id, redactText(input.description), input.worker ?? (this.getMeta("reason_worker") || "board"), input.worker ?? (this.getMeta("reason_worker") || "board"), GOAL, now, now);
       this.insertSources(id, sources);
       this.setMeta("status", "completed");
       this.setMeta("completed_intent", id);

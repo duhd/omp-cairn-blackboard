@@ -44,11 +44,11 @@ test("after a write, the next full run of calls after the cooldown nudges again"
   expect(calls(state, "s", "read", NUDGE_AFTER_CALLS, T0 + NUDGE_COOLDOWN_MS)).toHaveLength(1);
 });
 
-test("reading only the board list also resets the counter", () => {
+test("reading the board list counts toward the nudge instead of resetting it", () => {
   const state: NudgeState = new Map();
   expect(calls(state, "s", "read", NUDGE_AFTER_CALLS - 1, T0)).toHaveLength(0);
-  expect(nudgeOnCall(state, "s", "board_list", T0 + 1)).toBeUndefined();
-  expect(calls(state, "s", "read", 6, T0 + 2)).toHaveLength(0);
+  // board_list is a read, not a write: it advances the counter, so the accumulated work still trips the nudge.
+  expect(nudgeOnCall(state, "s", "board_list", T0 + 1)).toBeDefined();
 });
 test("without touching the board, a second nudge waits for the cooldown", () => {
   const state: NudgeState = new Map();

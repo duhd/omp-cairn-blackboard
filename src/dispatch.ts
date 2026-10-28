@@ -30,6 +30,25 @@ export interface Checkpoint {
 const shortId = (id: string): string => id.slice(0, 8);
 
 /**
+ * Split intents into the dispatcher's counts, projecting an expired claim as reclaimable rather than held.
+ * A claimed intent stays claimed in the DB after its lease lapses (so a slow-but-alive worker can still conclude);
+ * here its expiry is surfaced as "unclaimed" so the controller is told to re-staff it, and it no longer counts
+ * toward "claimed", so a dead worker's intent cannot block the Reason prompt forever.
+ */
+export function projectLeases(intents: Array<{ id: string; status: string; lease_expires_at: number | null }>, now: number): { claimed: number; unclaimed: string[] } {
+  let claimed = 0;
+  const unclaimed: string[] = [];
+  for (const i of intents) {
+    // lease_expires_at === null on a claimed row is a legacy/0.1 intent with no heartbeat: treat it as expired,
+    // matching claimIntent's `heartbeat_at === null` reclaim, so it cannot wedge the Reason prompt forever.
+    const expired = i.status === "claimed" && (i.lease_expires_at === null || i.lease_expires_at <= now);
+    if (i.status === "open" || expired) unclaimed.push(i.id);
+    else if (i.status === "claimed") claimed += 1;
+  }
+  return { claimed, unclaimed };
+}
+
+/**
  * Advice for the controller, or undefined when nothing changed. Updates the checkpoint. The first look at a board
  * only records its counts, but still announces open intents nobody holds: a session resuming a board mid-way must
  * be told to staff them.

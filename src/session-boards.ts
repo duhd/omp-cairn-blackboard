@@ -49,7 +49,7 @@ export function compactionContext(state: SessionBoards, sessionId: string): stri
 
 /** What the plugin has seen for one session, for deciding when to remind it to write to (or read) its board. */
 export interface SessionActivity {
-  /** Non-board tool calls since the session last touched the board. */
+  /** Non-write tool calls since the session last wrote to the board. */
   callsSinceWrite: number;
   /** How many nudges this session has already received. */
   nudgesSent: number;
@@ -64,13 +64,14 @@ export const NUDGE_COOLDOWN_MS = 10 * 60_000;
 /** A session stops being reminded after this many nudges. */
 export const MAX_NUDGES_PER_SESSION = 3;
 
-// Any board tool counts as "touched the board": the point is to notice a session that stopped recording at all.
-const RESET_TOOLS: Record<string, true> = {
-  board_init: true, board_export: true, board_list: true, board_complete: true, board_reopen: true,
-  fact_claim: true, fact_query: true, fact_dispute: true,
+// Only WRITE tools reset callsSinceWrite. Read tools (board_list, board_export, fact_query, hint_query)
+// must NOT reset it: a session that reads its board but never records new work still needs to be nudged.
+const WRITE_TOOLS: Record<string, true> = {
+  board_init: true, board_complete: true, board_reopen: true,
+  fact_claim: true, fact_dispute: true,
   reason_claim: true, reason_release: true,
   intent_create: true, intent_claim: true, intent_heartbeat: true, intent_conclude: true, intent_release: true,
-  hint_write: true, hint_query: true,
+  hint_write: true,
 };
 
 export type NudgeState = Map<string, SessionActivity>;
@@ -78,7 +79,7 @@ export type NudgeState = Map<string, SessionActivity>;
 /** Note the tool call and return a nudge message when the session has worked long enough without touching its board. */
 export function nudgeOnCall(state: NudgeState, sessionId: string, toolName: string, now: number): string | undefined {
   const activity = state.get(sessionId) ?? { callsSinceWrite: 0, nudgesSent: 0, lastNudgeAt: -Infinity };
-  if (RESET_TOOLS[toolName]) activity.callsSinceWrite = 0;
+  if (WRITE_TOOLS[toolName]) activity.callsSinceWrite = 0;
   else activity.callsSinceWrite += 1;
   state.set(sessionId, activity);
   if (activity.nudgesSent >= MAX_NUDGES_PER_SESSION) return undefined;
