@@ -8,8 +8,12 @@ A state-space-search **blackboard** for omp (oh-my-pi). It gives parallel subage
 |---|---|
 | **Fact board** (extension) | Seventeen tools implementing a fact–intent graph: `board_init`, `board_list`, `board_export`, `board_complete`, `board_reopen`, `fact_claim`, `fact_query`, `fact_dispute`, `reason_claim`, `reason_release`, `intent_create`, `intent_claim`, `intent_heartbeat`, `intent_conclude`, `intent_release`, `hint_write`, `hint_query`. `board_list` is how a new session finds the board of unfinished work. |
 | **`cairn-search`** (skill) | The loop: Init → Bootstrap → Reason → Explore → Converge, for problems whose path is unknown up front. |
+| **`dispatcher-check`** (skill) | Diagnose whether the light dispatcher is firing its `cairn-dispatch` advice (open intents / Reason passes) and whether expired claims project as reclaimable. |
+| **`update-version`** (skill) | Bump the plugin version: `package.json`, `bun test`, docs, commit/push. |
 | **`/fact-board`** (command) | A read-only live view of the graph, for watching long multi-subagent investigations. |
 | **`redact-output`** (optional feature) | Rewrites credential-shaped values in command/execution output (`bash`, `eval`) before it reaches the transcript. File reads and searches are left untouched. Off by default. |
+
+> **Skill name collision:** skills are discovered at session startup. If a skill named `cairn-search` already exists in `~/.omp/agent/skills/` (an earlier manual copy), the plugin's copy is namespaced to `omp-cairn-blackboard/cairn-search`. Verify with `omp skill list --json` in a fresh session after install; delete or rename the stale copy to keep the bare name.
 
 ## Demo
 

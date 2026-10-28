@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-`omp-cairn-blackboard` is an omp (oh-my-pi) plugin, v0.2.0, MIT, with **zero dependencies**. It gives parallel `task` subagents a shared, persistent **fact–intent graph** (a "blackboard") to coordinate through, in place of messaging each other. The idea comes from Cairn: *state is the single source of truth, decisions are distributed to workers*. None of Cairn's code is used.
+`omp-cairn-blackboard` is an omp (oh-my-pi) plugin, v0.3.0, MIT, with **zero dependencies**. It gives parallel `task` subagents a shared, persistent **fact–intent graph** (a "blackboard") to coordinate through, in place of messaging each other. The idea comes from Cairn: *state is the single source of truth, decisions are distributed to workers*. None of Cairn's code is used.
 
-The package ships four pieces:
+The package ships five pieces:
 - A 17-tool extension: `src/index.ts`
-- The `cairn-search` workflow skill: `skills/cairn-search/SKILL.md`
+- Three workflow skills: `skills/cairn-search/SKILL.md`, `skills/dispatcher-check/SKILL.md`, `skills/update-version/SKILL.md`
 - A read-only live viewer: `src/viewer.ts`, started with `/fact-board`. It has a list view and an SVG Graph tab laid out by `src/graph.ts`
 - An opt-in `redact-output` feature: `src/redact-output.ts`
 
