@@ -14,7 +14,7 @@ license: MIT
 1. `package.json` — bump `version` (semver: patch for fixes, minor for behavior, major for breaking contracts).
 2. Run the suite — `bun test` must be green.
 3. If a public contract changed (tool params, skill names, nudge/lease behavior), update `README.md` and `AGENTS.md` so the docs match the code.
-4. Commit with a conventional message and push to `origin/main` (`duhd/omp-cairn-blackboard`).
+4. Commit with a conventional message and push to `origin/main` (`duhd/omp-cairn-blackboard`). If push returns 403 (`Permission to duhd/omp-cairn-blackboard.git denied to duhd-vnpay`), the active gh account is wrong: run `gh auth switch --user duhd && gh auth setup-git && git push origin main`, then `gh auth switch --user duhd-vnpay` to restore.
 
 ## Guardrails
 
