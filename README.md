@@ -83,7 +83,7 @@ Messages carry only counts, short intent ids and the project name, never board t
 - **List**: the origin/goal banner, per-worker counts, facts, intents by status with their `from → to` edges, and hints. Stale leases are marked and new rows are highlighted.
 - **Graph** (`?view=graph`): the board drawn left to right, from `origin` through intents and facts to `goal`. Border colors show status: intents are open, claimed or concluded; facts are claimed or disputed; an expired lease gets a red dashed border; a reached goal gets a solid gold border. Scroll to zoom, drag to pan, **Fit** to reset. Hover a node to highlight its edges, and click a fact or intent to open its card in List. The filter box dims nodes that don't match. A dashed edge that loops back means a finding deduplicated into an earlier fact. Zoom and pan are kept across refreshes. The layout is computed server-side (`src/graph.ts`).
 
-Use the project picker to switch boards; the URL keeps `project` and `view`. Outside omp: `bun src/viewer.ts`.
+Use the project picker to switch boards; the URL keeps `project` and `view`. Boards marked `completed` are hidden from that picker by default — tick the **completed** box beside it to show them — and the board named in the URL always stays listed, so a link to a finished board still opens. Outside omp: `bun src/viewer.ts`.
 
 The viewer reads the newest 500 facts, 500 intents and 500 hints. When older facts or intents exist, both tabs mark the view as **partial**: older nodes, and the edges into them, are not shown. When only hints overflow, just the List tab is marked, since the graph does not draw hints. Use `board_export` for the full graph.
 
