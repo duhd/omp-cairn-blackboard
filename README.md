@@ -13,9 +13,11 @@ A state-space-search **blackboard** for omp (oh-my-pi). It gives parallel subage
 
 ## Demo
 
-[![omp-cairn-blackboard demo](docs/demo-poster.png)](docs/omp-cairn-blackboard-demo.mp4)
+[![omp-cairn-blackboard demo](docs/demo-poster.png)](https://youtu.be/p7SJtOuVJnc)
 
-Click the poster to open the MP4 (raw playback); GitHub does not play a repo video inline. 178 seconds, 1080p, no narration. It runs one real board from `origin` to `goal` — init, a first fact, the Reason lease, two intents, two workers, a refused claim, a hint, two conclusions, completion — then shows the dispatcher advice those states trigger and the `/fact-board` list and graph views of the finished board.
+Watch on YouTube: <https://youtu.be/p7SJtOuVJnc> · 178 seconds, 1080p, no narration. GitHub does not embed a player in a README, so the poster links out.
+
+It runs one real board from `origin` to `goal` — init, a first fact, the Reason lease, two intents, two workers, a refused claim, a hint, two conclusions, completion — then shows the dispatcher advice those states trigger and the `/fact-board` list and graph views of the finished board. The same file is in [`docs/omp-cairn-blackboard-demo.mp4`](docs/omp-cairn-blackboard-demo.mp4).
 
 ## The graph
 
