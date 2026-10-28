@@ -153,8 +153,10 @@ export default function blackboard(pi: ExtensionAPI): void {
       return run(() => {
         // One task spread over several boards loses its history: the later board cannot cite the earlier facts, and
         // a session that resumes sees only half the work. Say so when a new board looks like a split.
+        const recent = Date.now() - 7 * 24 * 60 * 60 * 1000;
         const others = listBoards(resolveDbPath())
-          .filter(b => b.project !== (params.project ?? "") && b.status === "active")
+          .filter(b => b.project !== (params.project ?? ""))
+          .filter(b => b.status === "active" || (b.status === "completed" && (b.last_activity ?? 0) >= recent))
           .filter(b => overlaps(params.project ?? "", b.project, b.goal ?? ""));
         const init = boardFor(params.project).init({ origin: params.origin, goal: params.goal });
         const result: Record<string, unknown> = { ...init, next: nextSteps(params.project) };

@@ -119,6 +119,19 @@ test("fact_claim takes `from` as comma-separated ids and reports a bad source as
   expect((await call("fact_claim", { text: "three", from: "f_missing", project: "p" })).error).toContain("unknown source fact");
 });
 
+test("fact_claim warns the caller, in the result itself, when the fact has no name or no source", async () => {
+  process.env.FACT_BOARD_DB = join(dir, "warn-board.db");
+  const { tools } = await loadInstance("warn");
+  const call = async (params: Record<string, unknown>) => JSON.parse((await tools.fact_claim.execute("t", params)).content[0].text);
+  await call({ text: "x", project: "init" }); // claim once to ensure the board exists? claimFact does not require init, but keep it realistic
+  const bare = await call({ text: "unnamed and floating" });
+  expect(bare.warnings).toBeDefined();
+  expect(bare.warnings.some((w: string) => /unknown/.test(w))).toBe(true);
+  expect(bare.warnings.some((w: string) => /from/.test(w))).toBe(true);
+  const full = await call({ text: "rooted and named", claimed_by: "worker-1", from: "origin", project: "p" });
+  expect(full.warnings).toBeUndefined();
+});
+
 test("/fact-board start upgrades an existing 0.1 board so the read-only viewer can show it", async () => {
   process.env.FACT_BOARD_PORT = "0";
   process.env.FACT_BOARD_DB = join(dir, "legacy-board.db");
