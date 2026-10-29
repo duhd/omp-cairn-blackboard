@@ -153,10 +153,11 @@ The plugin installs no advisor. Advisor discovery reads `WATCHDOG.yml` from the 
 
 ```bash
 ${EDITOR:-vi} ~/.omp/agent/WATCHDOG.yml     # keep your existing entries
-bun -e 'Bun.YAML.parse(await Bun.file(process.env.HOME + "/.omp/agent/WATCHDOG.yml").text())' && echo ok
-omp -p --advisor "ok"                       # then look for __advisor.board-auditor.jsonl
+omp -p --advisor "ok"                       # a broken roster warns at startup and is skipped
 find ~/.omp/agent/sessions -name '__advisor.board-auditor.jsonl'
 ```
+
+A valid file only proves the YAML parses; `/advisor status` in the session lists the entries that actually built, and a malformed roster is reported and skipped at startup instead of failing silently.
 
 Sequence entries in one `advisors:` list must align. The snippet is indented two spaces to match the roster examples; if your file aligns differently, re-indent the whole item, because a level mismatch is a YAML error that drops the whole roster rather than just the new entry.
 
