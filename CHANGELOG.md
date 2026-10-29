@@ -11,7 +11,7 @@
 
 - Mid-run user steering was never recorded as a hint. The always-applied `rules/cairn-mindset.md` never mentioned `hint_write`, so a session that kept working after the user changed scope, approved a step or forbade one left `hints` empty, and every `intent_claim` handed workers `hints: []`. The rule now requires writing a short hint before acting on such a change, and `cairn-search` says the same for the controller.
 
-Extensions load only at process start: quit omp fully, run `omp plugin upgrade omp-cairn-blackboard`, then restart to pick up this release.
+Extensions load only at process start: quit omp fully, update the catalog and upgrade, then restart. A marketplace install runs `omp plugin marketplace update omp-cairn-blackboard` then `omp plugin upgrade omp-cairn-blackboard@omp-cairn-blackboard`; a `github:` install runs `omp plugin upgrade omp-cairn-blackboard`.
 
 ## 0.4.0 — 2026-10-29
 
