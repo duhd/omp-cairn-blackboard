@@ -39,7 +39,7 @@ function explore(board: Board, from: string[], fact: string) {
   const intent = board.createIntent({ description: `look into ${fact}`, from, reasonToken: reason_token });
   board.reasonRelease(reason_token);
   const { lease_token } = board.claimIntent(intent.id, "w1");
-  return board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact });
+  return board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact, evidence: "test observation" });
 }
 
 describe("graph layout", () => {

@@ -57,6 +57,17 @@ describe("graph", () => {
     expect(exported.facts.find((f: { id: string }) => f.id === fact.id).produced_by).toEqual([intent.id]);
   });
 
+  test("concluding without evidence is refused and creates no fact", () => {
+    const { board, reason_token } = started();
+    const intent = board.createIntent({ description: "check the DB pool", from: ["origin"], reasonToken: reason_token });
+    const { lease_token } = board.claimIntent(intent.id, "w1");
+    expectRule(() => board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "pool size is 5", evidence: "  " }), "evidence is required");
+    expect(board.queryFacts({ q: "pool size is 5" })).toHaveLength(0);
+    expect(JSON.parse(board.export()).intents.find((i: { id: string }) => i.id === intent.id).status).toBe("claimed");
+    const { fact } = board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "pool size is 5", evidence: "psql: pool_size=5" });
+    expect(fact.evidence).toBe("psql: pool_size=5");
+  });
+
   test("intents must cite existing, undisputed facts and never the goal", () => {
     const { board, reason_token } = started({ maxIntentsPerReason: 10 });
     const fact = board.claimFact({ text: "seed finding" });
@@ -123,9 +134,9 @@ describe("intent lease (compare-and-swap)", () => {
     now += 101; // w1 goes quiet; the lease expires
     const second = board.claimIntent(intent.id, "w2");
     expect(second.intent.claimed_by).toBe("w2");
-    expectRule(() => board.concludeIntent({ id: intent.id, leaseToken: first.lease_token, fact: "stale result" }), "no longer valid");
+    expectRule(() => board.concludeIntent({ id: intent.id, leaseToken: first.lease_token, fact: "stale result", evidence: "stale probe output" }), "no longer valid");
     expect(board.queryFacts({ q: "stale result" })).toHaveLength(0);
-    const { fact } = board.concludeIntent({ id: intent.id, leaseToken: second.lease_token, fact: "fresh result" });
+    const { fact } = board.concludeIntent({ id: intent.id, leaseToken: second.lease_token, fact: "fresh result", evidence: "fresh probe output" });
     expect(fact.claimed_by).toBe("w2");
   });
 
@@ -137,7 +148,7 @@ describe("intent lease (compare-and-swap)", () => {
     const intent = board.createIntent({ description: "slow work", from: ["origin"], reasonToken: reason_token });
     const { lease_token } = board.claimIntent(intent.id, "w1");
     now += 500;
-    expect(board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "late but valid" }).intent.status).toBe("concluded");
+    expect(board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "late but valid", evidence: "probe output" }).intent.status).toBe("concluded");
   });
 
   test("an expired lease survives an intervening board read: slow work is not silently lost", () => {
@@ -149,7 +160,7 @@ describe("intent lease (compare-and-swap)", () => {
     const { lease_token } = board.claimIntent(intent.id, "w1");
     now += 500; // lease lapses
     board.export(); // a read path runs expireStale, which must NOT reopen the intent
-    expect(board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "late but valid" }).intent.status).toBe("concluded");
+    expect(board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "late but valid", evidence: "probe output" }).intent.status).toBe("concluded");
   });
 
   test("heartbeat keeps a lease alive past the timeout and fails once it is lost", () => {
@@ -192,11 +203,11 @@ describe("intent lease (compare-and-swap)", () => {
     const released = board.releaseIntent(intent.id, lease_token);
     expect(released.status).toBe("open");
     expect(released.claimed_by).toBeNull();
-    expectRule(() => board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "x" }), "no longer valid");
+    expectRule(() => board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "x", evidence: "probe output" }), "no longer valid");
   });
 
   test.each([
-    ["conclude an open intent", (b: Board, id: string) => b.concludeIntent({ id, leaseToken: "t", fact: "x" })],
+    ["conclude an open intent", (b: Board, id: string) => b.concludeIntent({ id, leaseToken: "t", fact: "x", evidence: "probe output" })],
     ["release an open intent", (b: Board, id: string) => b.releaseIntent(id, "t")],
     ["heartbeat an open intent", (b: Board, id: string) => b.heartbeatIntent(id, "t")],
   ])("rejects: %s", (_name, act) => {
@@ -234,7 +245,7 @@ describe("intent lease (compare-and-swap)", () => {
     const { board, reason_token } = started();
     const intent = board.createIntent({ description: "probe", from: ["origin"], reasonToken: reason_token });
     const { lease_token } = board.claimIntent(intent.id, "w1");
-    board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "done" });
+    board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "done", evidence: "probe output" });
     expectRule(() => board.claimIntent(intent.id, "w2"), "invalid transition concluded -> claimed");
   });
 
@@ -282,7 +293,7 @@ describe("completion", () => {
     const { board, reason_token } = started();
     const intent = board.createIntent({ description: "probe", from: ["origin"], reasonToken: reason_token });
     const { lease_token } = board.claimIntent(intent.id, "w1");
-    const { fact } = board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "pool exhausted under load" });
+    const { fact } = board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "pool exhausted under load", evidence: "load test at 50 rps" });
     const done = board.complete({ from: [fact.id], description: "pool exhaustion causes the 500s", worker: "controller" }).intent;
     expect(done.to_fact_id).toBe("goal");
     expect(done.from).toEqual([fact.id]);
@@ -317,7 +328,7 @@ describe("completion", () => {
     const { board, reason_token } = started();
     const intent = board.createIntent({ description: "probe", from: ["origin"], reasonToken: reason_token });
     const { lease_token } = board.claimIntent(intent.id, "w1");
-    const { fact } = board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "pool exhausted" });
+    const { fact } = board.concludeIntent({ id: intent.id, leaseToken: lease_token, fact: "pool exhausted", evidence: "load test at 50 rps" });
     board.complete({ from: [fact.id], description: "done", worker: "controller" });
     const timeline = board.export("timeline");
     for (const marker of ["BOARD INITIALIZED", "INTENT DECLARED", "INTENT CONCLUDED", "BOARD COMPLETED"]) {
@@ -467,7 +478,7 @@ describe("storage", () => {
     board.init({ origin: "o", goal: "g" });
     const claimed = board.claimIntent("old", "w1");
     expect(claimed.intent.description).toBe("kept");
-    expect(board.concludeIntent({ id: "old", leaseToken: claimed.lease_token, fact: "migrated" }).intent.to_fact_id).toBeTruthy();
+    expect(board.concludeIntent({ id: "old", leaseToken: claimed.lease_token, fact: "migrated", evidence: "migrated row" }).intent.to_fact_id).toBeTruthy();
   });
 
   test("the viewer reports a not-yet-migrated 0.1 board instead of failing, and reads it once a writer upgrades it", async () => {

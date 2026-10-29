@@ -76,7 +76,7 @@ Ask the agent to investigate something open-ended with `cairn-search`, or drive 
 1. `board_init({ origin, goal })`.
 2. **Bootstrap** — try to solve it directly; `board_complete` if solved.
 3. **Reason** — `reason_claim`, then `board_export` (the whole graph). Propose up to two `intent_create`, then `reason_release`.
-4. **Explore** — one `task` subagent per open intent: `intent_claim` → work → `intent_conclude` (or `intent_release`).
+4. **Explore** — one `task` subagent per open intent: `intent_claim` → work → `intent_conclude` with `evidence` (required), or `intent_release` to hand it back.
 5. Repeat, then synthesize from `board_export`.
 
 ### Coordination rules (enforced in code, not just in prompts)

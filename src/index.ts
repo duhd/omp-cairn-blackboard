@@ -295,8 +295,8 @@ export default function blackboard(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "intent_conclude",
     description:
-      "Finish a claimed intent with exactly one confirmed fact. Pass `fact` (required, the confirmed fact text) plus `id` and `lease_token`. Creates the fact and links it to the intent atomically. Fails without side effects if the lease was lost.",
-    parameters: z.object({ id: z.string(), lease_token: z.string(), fact: z.string(), evidence: z.string().optional(), project }),
+      "Finish a claimed intent with exactly one confirmed fact. Pass `fact` (required, the confirmed fact text), `evidence` (required: the command, file or output that proves it) plus `id` and `lease_token`. Creates the fact and links it to the intent atomically. Fails without side effects if the lease was lost or evidence is empty.",
+    parameters: z.object({ id: z.string(), lease_token: z.string(), fact: z.string(), evidence: z.string(), project }),
     async execute(_id, params) {
       return run(() =>
         boardFor(params.project).concludeIntent({ id: params.id, leaseToken: params.lease_token, fact: params.fact, evidence: params.evidence }),

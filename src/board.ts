@@ -656,9 +656,13 @@ export class Board {
    * lease token: if the lease was reclaimed the fact is not created and the caller gets an error.
    * An expired lease that nobody reclaimed still concludes — work is only refused when actually superseded.
    */
-  concludeIntent(input: { id: string; leaseToken: string; fact: string; evidence?: string }): { fact: FactRow; intent: IntentView } {
+  concludeIntent(input: { id: string; leaseToken: string; fact: string; evidence: string }): { fact: FactRow; intent: IntentView } {
     return this.write(() => {
       this.assertActive();
+      const evidence = input.evidence?.trim() ?? "";
+      if (evidence.length === 0) {
+        throw new BoardError("evidence is required: pass the command, file or output that proves the fact");
+      }
       const row = this.requireIntent(input.id);
       const text = redactText(input.fact);
       const factId = factIdOf(text);
@@ -667,7 +671,7 @@ export class Board {
           `INSERT OR IGNORE INTO facts (id, text, status, claimed_by, evidence, created_at)
            VALUES (?, ?, 'claimed', ?, ?, ?)`,
         )
-        .run(factId, text, row.claimed_by ?? "unknown", input.evidence ? redactText(input.evidence) : null, this.now());
+        .run(factId, text, row.claimed_by ?? "unknown", redactText(evidence), this.now());
       const { changes } = this.db
         .query(
           `UPDATE intents SET status = 'concluded', to_fact_id = ?, lease_token = NULL, updated_at = ?
