@@ -1,0 +1,22 @@
+{
+  "name": "omp-cairn-blackboard",
+  "owner": {
+    "name": "duhd"
+  },
+  "metadata": {
+    "description": "Cairn-style blackboard for omp"
+  },
+  "plugins": [
+    {
+      "name": "omp-cairn-blackboard",
+      "description": "Cairn-style blackboard for omp: a shared fact/intent/hint board, workflow skills and a read-only live viewer, so parallel subagents coordinate through shared state.",
+      "version": "0.4.0",
+      "source": "./",
+      "category": "development",
+      "homepage": "https://github.com/duhd/omp-cairn-blackboard",
+      "repository": "https://github.com/duhd/omp-cairn-blackboard",
+      "license": "MIT",
+      "keywords": ["blackboard", "multi-agent", "subagents", "fact-board", "cairn"]
+    }
+  ]
+}

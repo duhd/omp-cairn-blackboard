@@ -908,7 +908,16 @@ function chronological(snapshot: Snapshot): Snapshot {
 
 function timelineOf(snapshot: Snapshot): string {
   const { board } = snapshot;
-  const factText = new Map(snapshot.facts.map(f => [f.id, f.text]));
+  const factById = new Map(snapshot.facts.map(f => [f.id, f]));
+  // A disputed fact must read as disputed; the reason is the suffix disputeFact appended to its evidence. The
+  // reason may itself contain brackets (e.g. "[REDACTED]"), so cut from the last marker to the final "]".
+  const disputedNote = (fact: FactRow | undefined): string => {
+    if (fact?.status !== "disputed") return "";
+    const evidence = fact.evidence ?? "";
+    const marker = evidence.lastIndexOf("[disputed: ");
+    if (marker < 0 || !evidence.endsWith("]")) return "\n  DISPUTED";
+    return `\n  DISPUTED: ${evidence.slice(marker + "[disputed: ".length, -1)}`;
+  };
   const events: Array<{ at: number; text: string }> = [];
   if (board.created_at !== null) {
     events.push({ at: board.created_at, text: `BOARD INITIALIZED\n  origin: ${board.origin}\n  goal: ${board.goal}` });
@@ -916,18 +925,26 @@ function timelineOf(snapshot: Snapshot): string {
   for (const fact of snapshot.facts) {
     if (fact.produced_by.length === 0) {
       const from = fact.from.length > 0 ? `\n  from: ${fact.from.join(", ")}` : "";
-      events.push({ at: fact.created_at, text: `FACT CLAIMED ${fact.id} by ${fact.claimed_by}${from}\n  ${fact.text}` });
+      events.push({ at: fact.created_at, text: `FACT CLAIMED ${fact.id} by ${fact.claimed_by}${from}\n  ${fact.text}${disputedNote(fact)}` });
     }
   }
   for (const hint of snapshot.hints) events.push({ at: hint.created_at, text: `HINT\n  ${hint.content}` });
   for (const intent of snapshot.intents) {
     const from = intent.from.join(", ");
+    const produced = factById.get(intent.to_fact_id ?? "");
+    // reopen() repoints the completion intent at its reason fact, so the completion happened at created_at
+    // (complete() writes both stamps at once) and the reopen at the reason fact's creation.
+    if (intent.status === "concluded" && produced?.claimed_by === "reopen") {
+      events.push({ at: intent.created_at, text: `BOARD COMPLETED by ${intent.claimed_by}\n  via: ${intent.id} from ${from}\n  ${intent.description}` });
+      events.push({ at: produced.created_at, text: `BOARD REOPENED (undoes ${intent.id})\n  reason: ${produced.id}\n  ${produced.text}` });
+      continue;
+    }
     events.push({ at: intent.created_at, text: `INTENT DECLARED ${intent.id} by ${intent.created_by}\n  from: ${from}\n  ${intent.description}` });
     if (intent.status !== "concluded") continue;
     const text =
       intent.to_fact_id === GOAL
         ? `BOARD COMPLETED by ${intent.claimed_by}\n  via: ${intent.id} from ${from}`
-        : `INTENT CONCLUDED ${intent.id} by ${intent.claimed_by}\n  produced: ${intent.to_fact_id}\n  ${factText.get(intent.to_fact_id ?? "") ?? ""}`;
+        : `INTENT CONCLUDED ${intent.id} by ${intent.claimed_by}\n  produced: ${intent.to_fact_id}\n  ${produced?.text ?? ""}${disputedNote(produced)}`;
     events.push({ at: intent.updated_at, text });
   }
   events.sort((a, b) => a.at - b.at);

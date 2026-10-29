@@ -11,10 +11,12 @@ license: MIT
 
 ## Steps
 
-1. `package.json` — bump `version` (semver: patch for fixes, minor for behavior, major for breaking contracts).
-2. Run the suite — `bun test` must be green.
-3. If a public contract changed (tool params, skill names, nudge/lease behavior), update `README.md` and `AGENTS.md` so the docs match the code.
-4. Commit with a conventional message and push to `origin/main` (`duhd/omp-cairn-blackboard`). If push returns 403 (`Permission to duhd/omp-cairn-blackboard.git denied to duhd-vnpay`), the active gh account is wrong: run `gh auth switch --user duhd && gh auth setup-git && git push origin main`, then `gh auth switch --user duhd-vnpay` to restore.
+1. `package.json` — bump `version` (semver: patch for fixes, minor for behavior, major for breaking contracts). Set the same `version` in `.omp-plugin/marketplace.json`: `omp plugin upgrade` of all plugins only reinstalls when the catalog version is newer.
+2. `CHANGELOG.md` — add `## X.Y.Z — YYYY-MM-DD` at the top with `### Added` / `### Changed` / `### Fixed` entries for this release. There is no `Unreleased` section.
+3. Run the suite — `bun test` must be green.
+4. If a public contract changed (tool params, skill names, nudge/lease behavior, `board_export` output), update `README.md` and `AGENTS.md` so the docs match the code.
+5. Commit with a conventional message and push to `origin/main` (`duhd/omp-cairn-blackboard`). If push returns 403 (`Permission to duhd/omp-cairn-blackboard.git denied to duhd-vnpay`), the active gh account is wrong: run `gh auth switch --user duhd && gh auth setup-git && git push origin main`, then `gh auth switch --user duhd-vnpay` to restore. The push is the release: installed copies see the new `main` version in their next daily update check.
+6. Tag it and publish release notes: `git tag vX.Y.Z && git push origin vX.Y.Z`, then write that version's CHANGELOG section to a temp file and run `gh release create vX.Y.Z --title vX.Y.Z --notes-file <file>`. Never pass the notes inline with `--notes "…"`: the CHANGELOG contains backticks, which the shell would execute. Users do not need the release to update; it records what shipped.
 
 ## Guardrails
 

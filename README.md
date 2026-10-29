@@ -38,6 +38,10 @@ origin ──► Intent ──► Fact ──► Intent ──► Fact ──►
 ## Install
 
 ```bash
+# from the marketplace (this repository is its own catalog)
+omp plugin marketplace add duhd/omp-cairn-blackboard
+omp plugin install omp-cairn-blackboard@omp-cairn-blackboard
+
 # from git
 omp plugin install github:duhd/omp-cairn-blackboard
 
@@ -49,7 +53,19 @@ omp plugin link ./omp-cairn-blackboard
 omp plugin features omp-cairn-blackboard --enable=redact-output   # opt into output redaction
 ```
 
-Quit omp and start it again (`/new` does not load new extensions). The tools then exist for every session and subagent. Check with `omp plugin list`.
+Quit omp and start it again (`/new` does not load new extensions). The tools then exist for every session and subagent. Check with `omp plugin list`. Use one install method: omp rejects a second install under the same package name.
+
+### Updates
+
+When a main session starts, the plugin compares its version with `package.json` on `main` (at most once a day; the result is cached in `omp-cairn-blackboard-update.json` next to the default board). If `main` is newer, it shows a notice with the command for your install method. It never updates by itself:
+
+| Installed with | Suggested command |
+|---|---|
+| marketplace | `omp plugin marketplace update <marketplace>` then `omp plugin upgrade omp-cairn-blackboard@<marketplace>` |
+| `github:` | `omp plugin upgrade omp-cairn-blackboard` (keeps enablement and features; a fresh `install` resets them) |
+| `omp plugin link` of a git checkout | `git pull` in the checkout |
+
+Offline or failed checks are silent. Set `FACT_BOARD_UPDATE_CHECK=0` to turn the check off. Release notes: [CHANGELOG.md](CHANGELOG.md).
 
 > omp mounts extension tools under `xd://` rather than in the normal tool list. Agents call them by writing a JSON args object to `xd://fact_claim` (read the same path for the schema). The `cairn-search` skill tells the agent this, and tells it to repeat it to subagents.
 
@@ -122,6 +138,7 @@ The viewer opens the database read-only, binds to `127.0.0.1` only, answers only
 | `FACT_BOARD_PORT` | `8799` | Viewer port. |
 | `FACT_BOARD_LEASE_SECONDS` | `900` | How long an intent/Reason lease may go without a heartbeat before it can be reclaimed. |
 | `FACT_BOARD_MAX_INTENTS` | `2` | Cap on intents one Reason pass may declare. |
+| `FACT_BOARD_UPDATE_CHECK` | on | `0` disables the daily new-version check against GitHub. |
 | `PI_CODING_AGENT_DIR` | `~/.omp/agent` | Used to locate the default board. |
 
 Each tool also takes an optional `project` name: every project is its own board file (under `fact-boards/` next to the default), with its own origin, goal and graph.
@@ -158,7 +175,7 @@ bun test          # graph, leases, dedup, redaction, migration, cross-process lo
 bun src/viewer.ts # run the viewer standalone (from the repo root)
 ```
 
-Layout: `src/board.ts` (graph + coordination), `src/index.ts` (extension: tools + `/fact-board`), `src/viewer.ts`, `src/graph.ts` (graph layout for the viewer), `src/redact.ts`, `src/redact-output.ts` (optional feature), `skills/` (`cairn-search`, `dispatcher-check`, `update-version`).
+Layout: `src/board.ts` (graph + coordination), `src/index.ts` (extension: tools + `/fact-board`), `src/viewer.ts`, `src/graph.ts` (graph layout for the viewer), `src/update-check.ts` (new-version notice), `src/redact.ts`, `src/redact-output.ts` (optional feature), `skills/` (`cairn-search`, `dispatcher-check`, `update-version`), `rules/cairn-mindset.md` (always-applied agent guidance), `.omp-plugin/marketplace.json` (marketplace catalog).
 
 ## Uninstall
 

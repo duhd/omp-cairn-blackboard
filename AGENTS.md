@@ -2,13 +2,16 @@
 
 ## Project Overview
 
-`omp-cairn-blackboard` is an omp (oh-my-pi) plugin, v0.3.0, MIT, with **zero dependencies**. It gives parallel `task` subagents a shared, persistent **fact–intent graph** (a "blackboard") to coordinate through, in place of messaging each other. The idea comes from Cairn: *state is the single source of truth, decisions are distributed to workers*. None of Cairn's code is used.
+`omp-cairn-blackboard` is an omp (oh-my-pi) plugin, v0.4.0, MIT, with **zero dependencies**. It gives parallel `task` subagents a shared, persistent **fact–intent graph** (a "blackboard") to coordinate through, in place of messaging each other. The idea comes from Cairn: *state is the single source of truth, decisions are distributed to workers*. None of Cairn's code is used.
 
-The package ships five pieces:
+The package ships these pieces:
 - A 17-tool extension: `src/index.ts`
 - Three workflow skills: `skills/cairn-search/SKILL.md`, `skills/dispatcher-check/SKILL.md`, `skills/update-version/SKILL.md`
 - A read-only live viewer: `src/viewer.ts`, started with `/fact-board`. It has a list view and an SVG Graph tab laid out by `src/graph.ts`
 - An opt-in `redact-output` feature: `src/redact-output.ts`
+- A daily new-version notice on `session_start`: `src/update-check.ts` (reads `package.json` on GitHub `main`, suggests the upgrade command for the install kind, never updates)
+- A marketplace catalog: `.omp-plugin/marketplace.json` (keep its `version` equal to `package.json`)
+- An always-applied rule for the agent: `rules/cairn-mindset.md` (when and how to use the board). It is the only LLM guidance outside skills and tool descriptions; never write guidance into a user's `AGENTS.md`
 
 ## Architecture & Data Flow
 
@@ -92,6 +95,7 @@ omp plugin features omp-cairn-blackboard --enable=redact-output
   - `FACT_BOARD_PORT`: viewer port, default 8799
   - `FACT_BOARD_LEASE_SECONDS`
   - `FACT_BOARD_MAX_INTENTS`
+  - `FACT_BOARD_UPDATE_CHECK`: `0` disables the daily version check (`src/update-check.ts`), the plugin's only network call
   - `PI_CODING_AGENT_DIR`
 - Lease and cap values are read when a `Board` is constructed, and boards are cached per path. Changing env mid-process does not affect boards that are already open.
 - The process holds DB files open while omp runs. Project board files cannot be deleted until the process exits.

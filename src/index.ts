@@ -15,6 +15,7 @@ import { dispatchAdvice, projectLeases } from "./dispatch";
 import type { Checkpoint } from "./dispatch";
 import { compactionContext, nudgeOnCall, recordToolUse } from "./session-boards";
 import type { NudgeState, SessionBoards } from "./session-boards";
+import { checkForUpdate, installedPlugin, updateCachePath } from "./update-check";
 import { startViewer } from "./viewer";
 import type { ViewerHandle } from "./viewer";
 
@@ -34,6 +35,8 @@ interface SharedState {
   /** When the dispatcher last looked at a session's boards. */
   lastLook: Map<string, number>;
   viewer?: ViewerHandle;
+  /** Set once this process has looked for a newer plugin version (the file cache spans processes). */
+  updateChecked?: boolean;
 }
 const SHARED_KEY: unique symbol = Symbol.for("omp-cairn-blackboard.state");
 const host = globalThis as typeof globalThis & { [SHARED_KEY]?: SharedState };
@@ -401,6 +404,21 @@ export default function blackboard(pi: ExtensionAPI): void {
       // nothing to do: the next tool call tries again
     }
   });
+  // At most one look per process, from the main session only, never blocking startup. Off with FACT_BOARD_UPDATE_CHECK=0.
+  pi.on("session_start", (_event, ctx) => {
+    if (ctx.agent.kind !== "main" || shared.updateChecked || process.env.FACT_BOARD_UPDATE_CHECK === "0") return;
+    shared.updateChecked = true;
+    const plugin = installedPlugin();
+    if (!plugin) return;
+    void checkForUpdate({ ...plugin, cachePath: updateCachePath(resolveDbPath()) })
+      .then(message => {
+        if (message) ctx.ui.notify(message, "info");
+      })
+      .catch(() => {
+        // an update notice is optional
+      });
+  });
+
   pi.on("session.compacting", event => {
     const context = compactionContext(shared.sessions, event.sessionId);
     return context.length > 0 ? { context } : undefined;

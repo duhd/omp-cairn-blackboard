@@ -1,11 +1,11 @@
 {
   "name": "omp-cairn-blackboard",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Cairn-style blackboard for omp: a shared fact/intent/hint board, workflow skills and a read-only live viewer, so parallel subagents coordinate through shared state.",
   "type": "module",
   "license": "MIT",
   "keywords": ["omp", "oh-my-pi", "plugin", "blackboard", "multi-agent", "subagents", "fact-board", "cairn"],
-  "files": ["src", "skills", "docs", "README.md", "LICENSE"],
+  "files": ["src", "skills", "rules", "docs", ".omp-plugin", "README.md", "CHANGELOG.md", "LICENSE"],
   "scripts": {
     "test": "bun test",
     "viewer": "bun src/viewer.ts"

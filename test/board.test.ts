@@ -297,6 +297,22 @@ describe("completion", () => {
     expect(board.reasonClaim("controller").worker).toBe("controller");
   });
 
+  test("the timeline marks disputed facts and tells completion and reopen apart", () => {
+    const { board } = started();
+    const wrong = board.claimFact({ text: "threshold is 1.109.0", from: ["origin"] });
+    const right = board.claimFact({ text: "rotation already shipped", from: ["origin"] });
+    const done = board.complete({ from: [wrong.id, right.id], description: "all checked", worker: "controller" }).intent;
+    board.reopen("new evidence after completion");
+    board.disputeFact(wrong.id, "threshold [1.109.0] was inferred");
+    const timeline = board.export("timeline");
+    expect(timeline).toContain(`FACT CLAIMED ${wrong.id} by controller\n  from: origin\n  threshold is 1.109.0\n  DISPUTED: threshold [1.109.0] was inferred`);
+    expect(timeline).not.toContain(`rotation already shipped\n  DISPUTED`);
+    expect(timeline).toContain(`BOARD COMPLETED by controller\n  via: ${done.id}`);
+    expect(timeline).toContain(`BOARD REOPENED (undoes ${done.id})`);
+    expect(timeline).not.toContain(`INTENT CONCLUDED ${done.id}`);
+    expect(timeline.indexOf("BOARD COMPLETED")).toBeLessThan(timeline.indexOf("BOARD REOPENED"));
+  });
+
   test("the timeline export tells the path from origin to goal", () => {
     const { board, reason_token } = started();
     const intent = board.createIntent({ description: "probe", from: ["origin"], reasonToken: reason_token });
