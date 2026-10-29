@@ -10,7 +10,7 @@
     {
       "name": "omp-cairn-blackboard",
       "description": "Cairn-style blackboard for omp: a shared fact/intent/hint board, workflow skills and a read-only live viewer, so parallel subagents coordinate through shared state.",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "source": "./",
       "category": "development",
       "homepage": "https://github.com/duhd/omp-cairn-blackboard",

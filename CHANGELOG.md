@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 — 2026-10-29
+
+### Changed
+
+- `intent_conclude` now requires `evidence`. An empty or missing evidence is refused before anything is written, so a conclusion without the command, file or output that proves it no longer lands on the board. The parameter is required in the tool schema and enforced in `Board.concludeIntent`; existing boards need no migration because the column already exists.
+- `rules/cairn-mindset.md` now states three review findings: every fact carries evidence, a Reason pass ends with `board_complete` or `reason_release` instead of leaving the lease to expire, and `board_complete` is preceded by turning remaining work into intents or a handoff hint and reading the returned `unfinished` list. The `cairn-search` skill and README say the same.
+- Extensions load only at process start: quit omp fully, update the catalog and upgrade, then restart. A marketplace install runs `omp plugin marketplace update omp-cairn-blackboard` then `omp plugin upgrade omp-cairn-blackboard@omp-cairn-blackboard`; a `github:` install runs `omp plugin upgrade omp-cairn-blackboard`.
+
 ## 0.4.1 — 2026-10-29
 
 ### Changed
