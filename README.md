@@ -145,6 +145,26 @@ The viewer opens the database read-only, binds to `127.0.0.1` only, answers only
 
 Each tool also takes an optional `project` name: every project is its own board file (under `fact-boards/` next to the default), with its own origin, goal and graph.
 
+### Advisors (optional)
+
+The plugin installs no advisor. Advisor discovery reads `WATCHDOG.yml` from the agent directory (`~/.omp/agent`) and from each directory between the cwd and the repository root; the plugin cache is not one of those places, so `omp plugin install` and `omp plugin upgrade` never add or change an entry.
+
+`docs/advisors/board-auditor.yml` is a ready entry that audits a board instead of the code. Paste its single list item under the `advisors:` key of your own `WATCHDOG.yml`, keep its two-space indentation, and parse the file before starting a session:
+
+```bash
+${EDITOR:-vi} ~/.omp/agent/WATCHDOG.yml     # keep your existing entries
+bun -e 'Bun.YAML.parse(await Bun.file(process.env.HOME + "/.omp/agent/WATCHDOG.yml").text())' && echo ok
+omp -p --advisor "ok"                       # then look for __advisor.board-auditor.jsonl
+find ~/.omp/agent/sessions -name '__advisor.board-auditor.jsonl'
+```
+
+Sequence entries in one `advisors:` list must align. The snippet is indented two spaces to match the roster examples; if your file aligns differently, re-indent the whole item, because a level mismatch is a YAML error that drops the whole roster rather than just the new entry.
+
+- Read-only: `read`, `grep`, `glob`. It queries the board with `read <db>?q=SELECT ...` and needs no shell, so board text never reaches a command line.
+- `scope: main`: attached to the top-level session only, never to the Cairn subagents that hold intents.
+- `reviewMode: agent-end` with `reviewInterval: 3`: one review per three completed runs. A roster entry ignores the global `advisor.reviewInterval` and defaults to `1`, which pays a review at every final yield of every main session whether or not it touched a board. Raise the interval, or drop the entry, if that cost is not worth it; the `advisor` model role pays for it.
+- The instructions treat facts, evidence and hints as data, keep the reviewer away from shell tools, and tell it to stay silent in sessions that never use a board.
+
 ## Security notes
 
 ### Trust model
@@ -177,7 +197,7 @@ bun test          # graph, leases, dedup, redaction, migration, cross-process lo
 bun src/viewer.ts # run the viewer standalone (from the repo root)
 ```
 
-Layout: `src/board.ts` (graph + coordination), `src/index.ts` (extension: tools + `/fact-board`), `src/viewer.ts`, `src/graph.ts` (graph layout for the viewer), `src/update-check.ts` (new-version notice), `src/redact.ts`, `src/redact-output.ts` (optional feature), `skills/` (`cairn-search`, `dispatcher-check`, `update-version`), `rules/cairn-mindset.md` (always-applied agent guidance), `.omp-plugin/marketplace.json` (marketplace catalog).
+Layout: `src/board.ts` (graph + coordination), `src/index.ts` (extension: tools + `/fact-board`), `src/viewer.ts`, `src/graph.ts` (graph layout for the viewer), `src/update-check.ts` (new-version notice), `src/redact.ts`, `src/redact-output.ts` (optional feature), `skills/` (`cairn-search`, `dispatcher-check`, `update-version`), `rules/cairn-mindset.md` (always-applied agent guidance), `docs/advisors/board-auditor.yml` (optional, hand-merged advisor entry), `.omp-plugin/marketplace.json` (marketplace catalog).
 
 ## Uninstall
 
