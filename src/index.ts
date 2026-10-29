@@ -336,7 +336,7 @@ export default function blackboard(pi: ExtensionAPI): void {
 
   pi.registerTool({
     name: "hint_write",
-    description: "Leave a steering note. Workers receive recent hints when they claim an intent.",
+    description: "Leave a steering note: record user steering (a scope change, an approval, a prohibition, a new requirement) before acting on it. Workers receive recent hints when they claim an intent.",
     parameters: z.object({ content: z.string(), project }),
     async execute(_id, params) {
       return run(() => boardFor(params.project).writeHint(params.content));

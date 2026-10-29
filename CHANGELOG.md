@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.1 — 2026-10-29
+
+### Changed
+
+- `/fact-board` viewer redesigned: OKLCH tokens with light and dark themes, a sticky topbar with the live/paused/offline state, a board summary, worker chips that filter the list, an intents rail grouped by status, and a restyled graph that fits the viewport. It still loads nothing from the network, renders board text with `textContent` only, and keeps the same URLs, `project`/`view` parameters and 2 s refresh.
+- The `hint_write` description now names its purpose: record user steering before acting, so workers that claim an intent receive it.
+
+### Fixed
+
+- Mid-run user steering was never recorded as a hint. The always-applied `rules/cairn-mindset.md` never mentioned `hint_write`, so a session that kept working after the user changed scope, approved a step or forbade one left `hints` empty, and every `intent_claim` handed workers `hints: []`. The rule now requires writing a short hint before acting on such a change, and `cairn-search` says the same for the controller.
+
+Extensions load only at process start: quit omp fully, run `omp plugin upgrade omp-cairn-blackboard`, then restart to pick up this release.
+
 ## 0.4.0 — 2026-10-29
 
 ### Added

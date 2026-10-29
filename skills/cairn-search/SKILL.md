@@ -47,7 +47,7 @@ The tools may not appear in the tool list; omp mounts them under `xd://` instead
 - Give every subagent a unique `worker` name. A claim by the current holder's name is treated as a heartbeat and returns the holder's `lease_token`, so two workers sharing a name would both own the same intent.
 - Leases expire. If a worker's `intent_conclude`/`intent_heartbeat` fails with "no longer valid", the intent was reclaimed — read `board_export` again instead of retrying blindly.
 - The controller is the dispatcher: it reads the graph and picks intents; it does not pre-slice a fixed decomposition.
-- Humans watch with `/fact-board` and steer with `hint_write`.
+- Humans watch with `/fact-board`. When the user steers in chat, the controller records it with `hint_write` before acting, so workers claiming intents see the constraint.
 
 ## Termination
 
