@@ -37,6 +37,8 @@
           được kiểm chứng.
         - fact không có `from` (floating), hoặc `claimed_by = unknown` (unknown provenance).
         - hai intent cùng hướng/trùng mục tiêu, hoặc intent không cite fact nguồn.
+        - intent không đáng flag nếu chỉ vì mô tả ngắn: chỉ flag khi nó phủ lại một hướng
+          đã conclude, hoặc có `from` rỗng / chỉ "origin" trong khi board đã có fact liên quan.
         - evidence là tóm tắt suy luận thay vì command/output quan sát được.
         - hint mới nhất không được phản ánh trong fact/intent conclude sau nó.
       Không đề xuất intent kế tiếp, không tự sửa board — đó là việc của Reason pass.

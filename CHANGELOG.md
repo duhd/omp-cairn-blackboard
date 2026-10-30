@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0 — 2026-10-30
+
+### Added
+
+- `intent_claim` returns `hint_count`, the board's total hint count, next to the newest 10 hints. A worker whose `hint_count` exceeds `hints.length` knows it saw only the newest slice and can read the rest (`hint_query`, or the exported board) before deciding.
+- The dispatcher's Reason advice now carries the absolute totals (`Board now: N fact(s), M hint(s), K live intent(s)`) alongside the delta that fired it, still counts only and never board text.
+
+### Changed
+
+- `cairn-search` and README tell the controller to brief a worker by path: export the board once to `local://board-<project>.md`, pass that path plus the intent id, and never paste the graph into the task text. When a subagent must return structured data instead of writing to the board, declare `outputSchema` rather than asking for JSON in prose.
+- The shipped Board auditor advisor flags an intent only when it repeats a concluded direction or cites no source (`from` empty, or only `origin` while the board has related facts); a short description alone is not a finding.
+
 ## 0.5.1 — 2026-10-29
 
 ### Added

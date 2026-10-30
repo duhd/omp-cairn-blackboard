@@ -76,13 +76,14 @@ Ask the agent to investigate something open-ended with `cairn-search`, or drive 
 1. `board_init({ origin, goal })`.
 2. **Bootstrap** — try to solve it directly; `board_complete` if solved.
 3. **Reason** — `reason_claim`, then `board_export` (the whole graph). Propose up to two `intent_create`, then `reason_release`.
-4. **Explore** — one `task` subagent per open intent: `intent_claim` → work → `intent_conclude` with `evidence` (required), or `intent_release` to hand it back.
+4. **Explore** — one `task` subagent per open intent: `intent_claim` → work → `intent_conclude` with `evidence` (required), or `intent_release` to hand it back. Brief the worker with a path, not a transcript: write the export once to `local://board-<project>.md` and pass that path plus the intent id.
 5. Repeat, then synthesize from `board_export`.
 
 ### Coordination rules (enforced in code, not just in prompts)
 
 - `intent_create` needs the Reason lease (`reason_claim` → `reason_token`), and one pass may declare at most **2** intents.
 - `intent_claim` returns a **lease token**. `intent_heartbeat`, `intent_conclude` and `intent_release` are compare-and-swap on that token: a worker whose lease was reclaimed can never overwrite its successor, and its rejected `intent_conclude` creates no fact. The token guards against races and stale writers among cooperating agents; it is not authentication (see [Trust model](#trust-model)).
+- `intent_claim` also returns the newest 10 hints plus `hint_count`, the board total. When `hint_count` is larger, the worker saw only the newest slice and should read the rest before deciding.
 - A claimed intent whose lease goes stale can still be concluded by its owner — the lease only lapses when it is actually reclaimed — and a new worker reclaims it on `intent_claim`, so a dead subagent never wedges the board.
 - Rejections are structured: tool errors carry a `code` (`intent_claimed`, `lease_lost`, `invalid_transition`, `reason_held`, …) plus `held_by` and `lease_expires_at` when a lease is involved, so a worker can tell a transient refusal from a permanent one.
 - `fact_claim` is idempotent (same text → same id; a repeat claim keeps the first row and adds any new `from` ids). `from` lists the facts it builds on (`"origin"` for the first), which draws its edges in the graph; without it the fact floats unconnected. `fact_dispute` marks a fact wrong; disputed facts cannot be cited as sources.
@@ -105,7 +106,7 @@ The board records nothing by itself, and an agent deep in a task can forget to c
 Cairn's dispatcher decides what runs next; inside omp only the agent can spawn subagents, so this extension advises the main session instead (`src/dispatch.ts`). At most every 30 s, on a main-session tool call, it reads each active board the session has used and compares it with its last look, using Cairn's triggers:
 
 - **open intents nobody has claimed** → one `cairn-dispatch` message asking for one `task` subagent per intent, each with its own worker name. An intent is announced once while it stays open, including intents already open when a session resumes a board; one that goes back to open (`intent_release`, or an expired lease) is announced again;
-- **more facts or hints, or the last open intent concluded** → a message asking for a Reason pass (`reason_claim`, `board_export`, then `board_complete`, which releases the Reason lease itself, or `intent_create` + `reason_release`). While any worker still holds an intent this prompt waits, then fires once they have all finished, so the controller does not close the board on half the results.
+- **more facts or hints, or the last open intent concluded** → a message asking for a Reason pass (`reason_claim`, `board_export`, then `board_complete`, which releases the Reason lease itself, or `intent_create` + `reason_release`). It carries the delta that fired it and the absolute totals (`Board now: N fact(s), M hint(s), K live intent(s)`). While any worker still holds an intent this prompt waits, then fires once they have all finished, so the controller does not close the board on half the results.
 
 Messages carry only counts, short intent ids and the project name, never board text. A board that cannot be read, or a message that cannot be sent, is skipped: the hook never blocks a tool call. Subagents get no advice.
 

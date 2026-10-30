@@ -121,7 +121,10 @@ export interface ClaimedIntent {
   lease_expires_at: number;
   /** The facts this intent grows from, so the worker starts with its context. */
   sources: FactRow[];
+  /** The newest hints, capped so a chatty board cannot flood a worker's context. */
   hints: HintRow[];
+  /** Total hints on the board; when it exceeds `hints.length` the worker knows it saw only the newest slice. */
+  hint_count: number;
 }
 
 const SCHEMA = `
@@ -566,6 +569,7 @@ export class Board {
       lease_expires_at: (row.heartbeat_at ?? 0) + this.leaseMs,
       sources: this.sourceFacts(this.sourcesOf(row.id)),
       hints: this.queryHints(10),
+      hint_count: this.hintCount(),
     };
   }
 
@@ -766,6 +770,10 @@ export class Board {
 
   queryHints(limit = 20): HintRow[] {
     return this.db.query<HintRow, [number]>("SELECT * FROM hints ORDER BY created_at DESC LIMIT ?").all(limit);
+  }
+
+  private hintCount(): number {
+    return this.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM hints").get()?.n ?? 0;
   }
 
   // ── whole-graph reads ──────────────────────────────────────────────────────

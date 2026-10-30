@@ -40,6 +40,13 @@ test("the last open intent concluding asks for a Reason pass", () => {
   expect(dispatchAdvice(cp, counts({ live: 0 }), "p").advice).toContain("open intents 1->0");
 });
 
+test("the Reason advice carries the absolute counts, not only the delta", () => {
+  const cp = dispatchAdvice(undefined, counts({ facts: 2 }), "p").next;
+  const advice = dispatchAdvice(cp, counts({ facts: 5, hints: 2, live: 0 }), "p").advice ?? "";
+  expect(advice).toContain("Board now: 5 fact(s), 2 hint(s), 0 live intent(s)");
+  expect(advice).not.toContain("service X");
+});
+
 test("an unchanged graph gives no advice, and advice is not repeated", () => {
   const cp = dispatchAdvice(undefined, counts({ facts: 1 }), "p").next;
   expect(dispatchAdvice(cp, counts({ facts: 1 }), "p").advice).toBeUndefined();

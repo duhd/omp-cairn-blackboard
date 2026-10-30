@@ -194,6 +194,17 @@ describe("intent lease (compare-and-swap)", () => {
     const claimed = board.claimIntent(intent.id, "w1");
     expect(claimed.sources.map(s => s.text)).toEqual(["service X returns 500 under load"]);
     expect(claimed.hints.map(h => h.content)).toEqual(["focus on the connection pool"]);
+    expect(claimed.hint_count).toBe(1);
+  });
+
+  test("claiming reports the total hint count when only the newest slice fits", () => {
+    const { board, reason_token } = started();
+    for (let i = 0; i < 12; i++) board.writeHint(`hint ${i}`);
+    const intent = board.createIntent({ description: "probe", from: ["origin"], reasonToken: reason_token });
+    const claimed = board.claimIntent(intent.id, "w1");
+    expect(claimed.hints).toHaveLength(10);
+    expect(claimed.hints[0].content).toBe("hint 11");
+    expect(claimed.hint_count).toBe(12);
   });
 
   test("release reopens the intent and invalidates the old token", () => {
