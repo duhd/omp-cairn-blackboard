@@ -736,3 +736,166 @@ describe("listBoards", () => {
     expect(listBoards(base).map(b => b.project)).toEqual([""]);
   });
 });
+
+describe("Tier 1 improvements: safe prefix resolution & provenance", () => {
+  test("resolveFactId resolves exact matches and valid prefixes >= 8 chars", () => {
+    const { board } = started();
+    const fact = board.claimFact({ text: "unique finding for prefix test", evidence: "test-evidence" });
+    expect(board.resolveFactId(fact.id)).toBe(fact.id);
+    const prefix = fact.id.slice(0, 8);
+    expect(board.resolveFactId(prefix)).toBe(fact.id);
+    expect(board.getFact(prefix)?.id).toBe(fact.id);
+  });
+
+  test("resolveFactId does not treat underscore as SQLite wildcard", () => {
+    const { board } = started();
+    const fact = board.claimFact({ text: "unique underscore test finding" });
+    // If prefix were LIKE 'f_abc%', an underscore would match any char like 'fxabc'
+    // Using substr prevents wildcard matching
+    const prefix = fact.id.slice(0, 10);
+    expect(board.resolveFactId(prefix)).toBe(fact.id);
+    // An unrelated prefix with different char at index 1 must not match
+    const fakePrefix = "fx" + prefix.slice(2);
+    expect(board.resolveFactId(fakePrefix)).toBe(fakePrefix);
+    expect(board.getFact(fakePrefix)).toBeNull();
+  });
+
+  test("resolveFactId throws ambiguous_id if multiple facts share the prefix", () => {
+    const path = join(tempDir("blackboard-ambig-"), "board.db");
+    const board = newBoard({}, path);
+    board.init({ origin: "o", goal: "g" });
+    board.close();
+    const rawDb = new Database(path);
+    rawDb.exec(
+      "INSERT INTO facts (id, text, status, claimed_by, created_at) VALUES ('f_collision11111', 't1', 'claimed', 'w', 1), ('f_collision22222', 't2', 'claimed', 'w', 2)",
+    );
+    rawDb.close();
+    const reopened = newBoard({}, path);
+    expect(() => reopened.resolveFactId("f_collis")).toThrow(BoardError);
+    expect(() => reopened.resolveFactId("f_collis")).toThrow("ambiguous fact id prefix");
+  });
+
+  test("resolveIntentId resolves exact matches and valid prefixes >= 8 chars, and allows prefix in claim/conclude", () => {
+    const { board, reason_token } = started();
+    const intent = board.createIntent({ description: "prefix intent", from: ["origin"], reasonToken: reason_token });
+    const shortId = intent.id.slice(0, 8);
+    expect(board.resolveIntentId(shortId)).toBe(intent.id);
+
+    // Claim via short ID (e.g. emitted by dispatcher)
+    const claimed = board.claimIntent(shortId, "worker-prefix");
+    expect(claimed.intent.id).toBe(intent.id);
+    expect(claimed.intent.status).toBe("claimed");
+
+    // Heartbeat via short ID
+    const hb = board.heartbeatIntent(shortId, claimed.lease_token);
+    expect(hb.intent.id).toBe(intent.id);
+
+    // Conclude via short ID
+    const { fact, intent: concluded } = board.concludeIntent({
+      id: shortId,
+      leaseToken: claimed.lease_token,
+      fact: "short id concluded successfully",
+      evidence: "prefix proof",
+    });
+    expect(concluded.id).toBe(intent.id);
+    expect(concluded.status).toBe("concluded");
+    expect(fact.text).toBe("short id concluded successfully");
+  });
+
+  test("controller_worker provenance is preserved across reason_release and not hijacked by subagents", () => {
+    const { board, reason_token } = started();
+    // Controller creates intent
+    const intent = board.createIntent({ description: "subagent task", from: ["origin"], reasonToken: reason_token });
+    // Controller releases reason lease
+    board.reasonRelease(reason_token);
+
+    // Subagent claims intent with its own worker name
+    board.claimIntent(intent.id, "subagent-worker-42");
+
+    // Controller later claims a fact without passing claimedBy
+    const fact = board.claimFact({ text: "controller follow-up milestone" });
+    // Must be attributed to controller, NOT subagent-worker-42 and NOT "unknown"
+    expect(fact.claimed_by).toBe("controller");
+  });
+});
+
+describe("Tier 2 improvements: security redaction & completion invariants", () => {
+  test("redacts nodekey, privkey, keystore JSON and short passfile", () => {
+    const hex64 = "0123456789abcdef".repeat(4);
+    expect(redactText(`nodekey = ${hex64}`)).toBe("nodekey = [REDACTED]");
+    expect(redactText(`privkey: ${hex64}`)).toBe("privkey: [REDACTED]");
+    expect(redactText(`{"ciphertext": "${"0123456789abcdef".repeat(2)}"}`)).toBe('{"ciphertext": "[REDACTED]"}');
+    expect(redactText(`{'ciphertext': '${"0123456789abcdef".repeat(2)}'}`)).toBe("{'ciphertext': '[REDACTED]'}");
+    expect(redactText(`{"mac": "${"0123456789abcdef".repeat(2)}"}`)).toBe('{"mac": "[REDACTED]"}');
+    expect(redactText("passfile: 6B")).toBe("passfile: [REDACTED]");
+    expect(redactText("passphrase = abc")).toBe("passphrase = [REDACTED]");
+  });
+
+  test("claimFact on completed board throws BoardError with code board_completed and suggested_reason", () => {
+    const { board, reason_token } = started();
+    const fact = board.claimFact({ text: "prior finding" });
+    board.complete({ from: [fact.id], description: "goal met", worker: "controller" });
+
+    try {
+      board.claimFact({ text: "late milestone finding after completion" });
+      expect(true).toBe(false); // unreachable
+    } catch (err) {
+      expect(err).toBeInstanceOf(BoardError);
+      const bErr = err as BoardError;
+      expect(bErr.code).toBe("board_completed");
+      expect(bErr.details?.completed_intent).toBeDefined();
+      expect(bErr.details?.suggested_reason).toContain("Continuing work: late milestone finding");
+    }
+  });
+
+  test("reopen accepts worker identity and records it in claimed_by and timelineOf", () => {
+    const { board } = started();
+    const fact = board.claimFact({ text: "initial proof" });
+    const { intent: completedIntent } = board.complete({ from: [fact.id], description: "task complete", worker: "finisher" });
+
+    const { fact: reopenFact, intent: reopenedIntent } = board.reopen("need additional verification", "auditor-chief");
+    expect(reopenFact.claimed_by).toBe("reopen: auditor-chief");
+    expect(reopenedIntent.id).toBe(completedIntent.id);
+
+    const timeline = board.export("timeline");
+    expect(timeline).toContain("BOARD REOPENED by reopen: auditor-chief");
+  });
+});
+
+describe("Tier 3 improvements: compact summary export", () => {
+  test("board.export('summary') returns token-efficient JSON with board, live_intents, counts and recent_facts", () => {
+    const { board, reason_token } = started();
+    // Create 1 open intent, 1 concluded intent
+    const openIntent = board.createIntent({ description: "unclaimed investigation", from: ["origin"], reasonToken: reason_token });
+    const doneIntent = board.createIntent({ description: "already concluded investigation", from: ["origin"], reasonToken: reason_token });
+    const { lease_token } = board.claimIntent(doneIntent.id, "worker-finisher");
+    board.concludeIntent({
+      id: doneIntent.id,
+      leaseToken: lease_token,
+      fact: "concluded milestone finding",
+      evidence: "evidence that is very long: ".concat("long-evidence-text-".repeat(15)),
+    });
+    board.writeHint("check API rate limits before testing");
+
+    const summaryRaw = board.export("summary");
+    const summary = JSON.parse(summaryRaw);
+
+    expect(summary.board.status).toBe("active");
+    expect(summary.counts.live_intents).toBe(1);
+    expect(summary.live_intents).toHaveLength(1);
+    expect(summary.live_intents[0].id).toBe(openIntent.id);
+    expect(summary.hints).toHaveLength(1);
+    expect(summary.hints[0].content).toContain("rate limits");
+    expect(summary.recent_facts.length).toBeGreaterThanOrEqual(1);
+    // Verify evidence truncation in summary
+    const factWithLongEv = summary.recent_facts.find((f: { text: string }) => f.text === "concluded milestone finding");
+    expect(factWithLongEv).toBeDefined();
+    expect(factWithLongEv.evidence.endsWith("...")).toBe(true);
+    expect(factWithLongEv.evidence.length).toBeLessThanOrEqual(120);
+  });
+
+  test("export refuses unsupported format names", () => {
+    const { board } = started();
+    expectRule(() => board.export("xml"), "unsupported export format");
+  });
+});

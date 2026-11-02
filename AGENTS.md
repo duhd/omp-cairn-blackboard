@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`omp-cairn-blackboard` is an omp (oh-my-pi) plugin, v0.5.0, MIT, with **zero dependencies**. It gives parallel `task` subagents a shared, persistent **fact–intent graph** (a "blackboard") to coordinate through, in place of messaging each other. The idea comes from Cairn: *state is the single source of truth, decisions are distributed to workers*. None of Cairn's code is used.
+`omp-cairn-blackboard` is an omp (oh-my-pi) plugin, v0.6.1, MIT, with **zero dependencies**. It gives parallel `task` subagents a shared, persistent **fact–intent graph** (a "blackboard") to coordinate through, in place of messaging each other. The idea comes from Cairn: *state is the single source of truth, decisions are distributed to workers*. None of Cairn's code is used.
 
 The package ships these pieces:
 - A 17-tool extension: `src/index.ts`
@@ -62,9 +62,9 @@ omp plugin features omp-cairn-blackboard --enable=redact-output
 
 ## Code Conventions & Common Patterns
 
-- **Error handling:** rule violations throw `BoardError(message, { code?, details? })`. `run()` in `index.ts` turns them into `{ error, code?, ...details }`, and any other error rethrows. Codes in use: `reason_held`, `intent_claimed`, `invalid_transition`, `lease_lost`, `not_found`. Many rules (not initialized, cap, bad source…) still have no code, so callers must handle both shapes. When you add a rule, give it a `code`.
+- **Error handling:** rule violations throw `BoardError(message, { code?, details? })`. `run()` in `index.ts` turns them into `{ error, code?, ...details }`, and any other error rethrows. Codes in use: `reason_held`, `intent_claimed`, `invalid_transition`, `lease_lost`, `not_found`, `board_completed`, `ambiguous_id`. Many rules (not initialized, cap, bad source…) still have no code, so callers must handle both shapes. When you add a rule, give it a `code`.
 - **Typing:** no `any`. Use `unknown` plus type guards (see `isTextChunk`). Static lookups are `Record<string, true>`, not `Set`.
-- **Tool params:** wire params are snake_case (`claimed_by`, `reason_token`, `lease_token`) and TS method args are camelCase. `from` is a **string** (comma-separated or a JSON-array string) parsed by `parseIdList`; passing a real array fails validation.
+- **Tool params:** wire params are snake_case (`claimed_by`, `reason_token`, `lease_token`) and TS method args are camelCase. `from` is a **string** (comma-separated or a JSON-array string) parsed by `parseIdList` (optional in `intent_create`, defaulting to `"origin"`); passing a real array fails validation. Aliases are accepted for key parameters (`content`/`text`/`hint` in `hint_write`, `reason`/`why` in `board_reopen`, `fact`/`result` in `intent_conclude`).
 - **Zod subset known to load on the host:** `z.object/string/number`, `.optional/.describe/.int/.positive/.max`. `.array()`/`.min()` were removed because they are unverified against the omptype shim. Re-verify before adding new zod methods.
 - **Host import is type-only:** `import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent"`. Never make it a value import, and never add the package to `dependencies`.
 - **Dedup:** fact id is `f_<sha1(redacted text)>`, so identical findings collapse into one row.
@@ -110,7 +110,7 @@ omp plugin features omp-cairn-blackboard --enable=redact-output
   - `expectRule(fn, message)`: asserts a `BoardError` with that message
 - Spawn-based tests (WAL lock, claim race) need a `30_000` ms timeout; spawning Bun is slow on Windows.
 - **Credential-shaped fixtures are built at runtime**, e.g. ``` `${"AKIA"}${"B".repeat(16)}` ```. Never commit literal secrets. The host's secret obfuscator also masks such literals in tool output, so what you read may differ from what is on disk.
-- **Coverage gap:** tool registration and `run()` mapping have no unit tests; `test/extension.test.ts` covers the `/fact-board` command and shutdown through a stub `pi` loaded as separate module instances. Prove the real tool path with a restarted omp session plus a pair of `task` subagents.
+- **Testing:** `test/board.test.ts` covers the board graph, leases, dedup, safe prefix resolution, and redaction. `test/extension.test.ts` covers tool execution, compaction, command handlers, and dispatcher suppression through a stub `pi` loaded as separate module instances.
 
 ## Security Invariants (do not regress)
 

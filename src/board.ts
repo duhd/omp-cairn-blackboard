@@ -295,6 +295,8 @@ export class Board {
   }
 
   private clearReason(): void {
+    const worker = this.getMeta("reason_worker");
+    if (worker) this.setMeta("controller_worker", worker);
     this.db.exec("DELETE FROM meta WHERE key IN ('reason_worker','reason_token','reason_created','reason_heartbeat_at')");
   }
 
@@ -304,7 +306,10 @@ export class Board {
 
   private assertActive(): void {
     if (this.getMeta("status") === "completed") {
-      throw new BoardError("board is completed; call board_reopen with the reason it is not actually done");
+      throw new BoardError("board is completed; call board_reopen with the reason it is not actually done", {
+        code: "board_completed",
+        details: { completed_intent: this.getMeta("completed_intent") },
+      });
     }
   }
 
@@ -348,18 +353,27 @@ export class Board {
    */
   claimFact(input: { text: string; claimedBy?: string; evidence?: string; from?: readonly string[] }): FactRow {
     return this.write(() => {
-      this.assertActive();
+      if (this.getMeta("status") === "completed") {
+        throw new BoardError("board is completed; call board_reopen with the reason it is not actually done", {
+          code: "board_completed",
+          details: {
+            completed_intent: this.getMeta("completed_intent"),
+            suggested_reason: `Continuing work: ${redactText(input.text).slice(0, 80)}`,
+          },
+        });
+      }
       const text = redactText(input.text);
       // The id is derived from the stored text, so identical findings dedupe to one row.
       const id = factIdOf(text);
       const sources = input.from && input.from.length > 0 ? this.validateSources(input.from) : [];
       if (sources.includes(id)) throw new BoardError("a fact cannot be its own source");
+      const claimedBy = input.claimedBy ?? (this.getMeta("reason_worker") || this.getMeta("controller_worker") || "unknown");
       this.db
         .query(
           `INSERT OR IGNORE INTO facts (id, text, status, claimed_by, evidence, created_at)
            VALUES (?, ?, 'claimed', ?, ?, ?)`,
         )
-        .run(id, text, input.claimedBy ?? (this.getMeta("reason_worker") || "unknown"), input.evidence ? redactText(input.evidence) : null, this.now());
+        .run(id, text, claimedBy, input.evidence ? redactText(input.evidence) : null, this.now());
       // A repeated claim keeps its first row but may add sources it did not cite before.
       const insert = this.db.query("INSERT OR IGNORE INTO fact_sources (fact_id, source_id) VALUES (?, ?)");
       for (const source of sources) insert.run(id, source);
@@ -367,8 +381,25 @@ export class Board {
     });
   }
 
+  resolveFactId(id: string): string {
+    if (id === ORIGIN || id === GOAL) return id;
+    const direct = this.db.query("SELECT 1 FROM facts WHERE id = ?").get(id);
+    if (direct) return id;
+    if (id.length >= 8) {
+      const matches = this.db
+        .query<{ id: string }, [number, string]>("SELECT id FROM facts WHERE substr(id, 1, ?) = ?")
+        .all(id.length, id);
+      if (matches.length === 1) return matches[0].id;
+      if (matches.length > 1) {
+        throw new BoardError(`ambiguous fact id prefix: ${id}`, { code: "ambiguous_id" });
+      }
+    }
+    return id;
+  }
+
   getFact(id: string): FactRow | null {
-    return this.db.query<FactRow, [string]>("SELECT * FROM facts WHERE id = ?").get(id);
+    const resolved = this.resolveFactId(id);
+    return this.db.query<FactRow, [string]>("SELECT * FROM facts WHERE id = ?").get(resolved);
   }
 
   private requireFact(id: string): FactRow {
@@ -392,12 +423,12 @@ export class Board {
 
   /** Marks a fact disputed and appends the reason to its evidence. Never deletes. */
   disputeFact(id: string, reason?: string): FactRow {
-    this.requireFact(id);
+    const fact = this.requireFact(id);
     const suffix = reason ? ` [disputed: ${redactText(reason)}]` : "";
     this.db
       .query("UPDATE facts SET status = 'disputed', evidence = COALESCE(evidence, '') || ? WHERE id = ?")
-      .run(suffix, id);
-    return this.requireFact(id);
+      .run(suffix, fact.id);
+    return this.requireFact(fact.id);
   }
 
   // ── Reason lease (who may declare intents) ─────────────────────────────────
@@ -440,6 +471,7 @@ export class Board {
           details: { held_by: holder },
         });
       }
+      this.setMeta("controller_worker", worker);
       if (!holder) {
         this.setMeta("reason_worker", worker);
         this.setMeta("reason_token", crypto.randomUUID());
@@ -470,8 +502,24 @@ export class Board {
 
   // ── intents ────────────────────────────────────────────────────────────────
 
+  resolveIntentId(id: string): string {
+    const direct = this.db.query("SELECT 1 FROM intents WHERE id = ?").get(id);
+    if (direct) return id;
+    if (id.length >= 8) {
+      const matches = this.db
+        .query<{ id: string }, [number, string]>("SELECT id FROM intents WHERE substr(id, 1, ?) = ?")
+        .all(id.length, id);
+      if (matches.length === 1) return matches[0].id;
+      if (matches.length > 1) {
+        throw new BoardError(`ambiguous intent id prefix: ${id}`, { code: "ambiguous_id" });
+      }
+    }
+    return id;
+  }
+
   private getIntent(id: string): IntentRow | null {
-    return this.db.query<IntentRow, [string]>("SELECT * FROM intents WHERE id = ?").get(id);
+    const resolved = this.resolveIntentId(id);
+    return this.db.query<IntentRow, [string]>("SELECT * FROM intents WHERE id = ?").get(resolved);
   }
 
   private requireIntent(id: string): IntentRow {
@@ -503,13 +551,18 @@ export class Board {
       throw new BoardError(`"from" needs at least one source fact id (use "${ORIGIN}" for the starting point)`);
     }
     if (ids.includes(GOAL)) throw new BoardError(`"${GOAL}" cannot be used as a source`);
-    for (const id of ids) {
-      if (id === ORIGIN) continue;
-      const fact = this.getFact(id);
-      if (!fact) throw new BoardError(`unknown source fact: ${id}`);
-      if (fact.status === "disputed") throw new BoardError(`source fact ${id} is disputed; cite a standing fact`);
+    const resolvedIds: string[] = [];
+    for (const rawId of ids) {
+      if (rawId === ORIGIN) {
+        resolvedIds.push(ORIGIN);
+        continue;
+      }
+      const fact = this.getFact(rawId);
+      if (!fact) throw new BoardError(`unknown source fact: ${rawId}`);
+      if (fact.status === "disputed") throw new BoardError(`source fact ${fact.id} is disputed; cite a standing fact`);
+      resolvedIds.push(fact.id);
     }
-    return ids;
+    return resolvedIds;
   }
 
   private insertSources(intentId: string, ids: readonly string[]): void {
@@ -579,15 +632,16 @@ export class Board {
       this.expireStale();
       this.assertActive();
       const row = this.requireIntent(id);
+      const targetId = row.id;
       if (row.status === "claimed") {
         const expired = row.heartbeat_at === null || row.heartbeat_at < this.now() - this.leaseMs;
         if (row.claimed_by === worker) {
           // The owner asking again is a heartbeat, and gets its token back.
-          this.db.query("UPDATE intents SET heartbeat_at = ? WHERE id = ?").run(this.now(), id);
-          return this.claimResult(this.requireIntent(id));
+          this.db.query("UPDATE intents SET heartbeat_at = ? WHERE id = ?").run(this.now(), targetId);
+          return this.claimResult(this.requireIntent(targetId));
         }
         if (!expired) {
-          throw new BoardError(`intent ${id} is already claimed by ${row.claimed_by}`, {
+          throw new BoardError(`intent ${targetId} is already claimed by ${row.claimed_by}`, {
             code: "intent_claimed",
             details: { held_by: row.claimed_by, lease_expires_at: this.expiresAt(row) },
           });
@@ -600,15 +654,15 @@ export class Board {
             `UPDATE intents SET claimed_by = ?, lease_token = ?, heartbeat_at = ?, updated_at = ?
              WHERE id = ? AND status = 'claimed' AND claimed_by = ?`,
           )
-          .run(worker, crypto.randomUUID(), now, now, id, row.claimed_by);
+          .run(worker, crypto.randomUUID(), now, now, targetId, row.claimed_by);
         if (changes === 0) {
-          const holder = this.getIntent(id)?.claimed_by;
-          throw new BoardError(`intent ${id} was reclaimed concurrently${holder ? ` by ${holder}` : ""}`);
+          const holder = this.getIntent(targetId)?.claimed_by;
+          throw new BoardError(`intent ${targetId} was reclaimed concurrently${holder ? ` by ${holder}` : ""}`);
         }
-        return this.claimResult(this.requireIntent(id));
+        return this.claimResult(this.requireIntent(targetId));
       }
       if (row.status !== "open") {
-        throw new BoardError(`invalid transition ${row.status} -> claimed: intent ${id} is ${row.status}`, {
+        throw new BoardError(`invalid transition ${row.status} -> claimed: intent ${targetId} is ${row.status}`, {
           code: "invalid_transition",
           details: { status: row.status },
         });
@@ -621,12 +675,12 @@ export class Board {
           `UPDATE intents SET status = 'claimed', claimed_by = ?, lease_token = ?, heartbeat_at = ?, updated_at = ?
            WHERE id = ? AND status = 'open'`,
         )
-        .run(worker, crypto.randomUUID(), now, now, id);
+        .run(worker, crypto.randomUUID(), now, now, targetId);
       if (changes === 0) {
-        const holder = this.getIntent(id)?.claimed_by;
-        throw new BoardError(`intent ${id} was claimed concurrently${holder ? ` by ${holder}` : ""}`);
+        const holder = this.getIntent(targetId)?.claimed_by;
+        throw new BoardError(`intent ${targetId} was claimed concurrently${holder ? ` by ${holder}` : ""}`);
       }
-      return this.claimResult(this.requireIntent(id));
+      return this.claimResult(this.requireIntent(targetId));
     });
   }
 
@@ -646,20 +700,16 @@ export class Board {
   /** Extends the lease. Fails if the lease was lost to another worker or the intent is no longer claimed. */
   heartbeatIntent(id: string, leaseToken: string): { intent: IntentView; lease_expires_at: number } {
     return this.write(() => {
+      const targetId = this.resolveIntentId(id);
       const now = this.now();
       const { changes } = this.db
         .query("UPDATE intents SET heartbeat_at = ?, updated_at = ? WHERE id = ? AND status = 'claimed' AND lease_token = ?")
-        .run(now, now, id, leaseToken);
-      if (changes === 0) throw this.leaseError(id);
-      return { intent: this.view(this.requireIntent(id)), lease_expires_at: now + this.leaseMs };
+        .run(now, now, targetId, leaseToken);
+      if (changes === 0) throw this.leaseError(targetId);
+      return { intent: this.view(this.requireIntent(targetId)), lease_expires_at: now + this.leaseMs };
     });
   }
 
-  /**
-   * claimed -> concluded, producing exactly one fact linked to the intent. Atomic, and compare-and-swap on the
-   * lease token: if the lease was reclaimed the fact is not created and the caller gets an error.
-   * An expired lease that nobody reclaimed still concludes — work is only refused when actually superseded.
-   */
   concludeIntent(input: { id: string; leaseToken: string; fact: string; evidence: string }): { fact: FactRow; intent: IntentView } {
     return this.write(() => {
       this.assertActive();
@@ -668,6 +718,7 @@ export class Board {
         throw new BoardError("evidence is required: pass the command, file or output that proves the fact");
       }
       const row = this.requireIntent(input.id);
+      const targetId = row.id;
       const text = redactText(input.fact);
       const factId = factIdOf(text);
       this.db
@@ -681,24 +732,24 @@ export class Board {
           `UPDATE intents SET status = 'concluded', to_fact_id = ?, lease_token = NULL, updated_at = ?
            WHERE id = ? AND status = 'claimed' AND lease_token = ?`,
         )
-        .run(factId, this.now(), input.id, input.leaseToken);
+        .run(factId, this.now(), targetId, input.leaseToken);
       // Throwing rolls the whole transaction back, including the fact insert above.
-      if (changes === 0) throw this.leaseError(input.id);
-      return { fact: this.requireFact(factId), intent: this.view(this.requireIntent(input.id)) };
+      if (changes === 0) throw this.leaseError(targetId);
+      return { fact: this.requireFact(factId), intent: this.view(this.requireIntent(targetId)) };
     });
   }
 
-  /** claimed -> open, clearing the owner, so another worker can retry. */
   releaseIntent(id: string, leaseToken: string): IntentView {
     return this.write(() => {
+      const targetId = this.resolveIntentId(id);
       const { changes } = this.db
         .query(
           `UPDATE intents SET status = 'open', claimed_by = NULL, lease_token = NULL, heartbeat_at = NULL, updated_at = ?
            WHERE id = ? AND status = 'claimed' AND lease_token = ?`,
         )
-        .run(this.now(), id, leaseToken);
-      if (changes === 0) throw this.leaseError(id);
-      return this.view(this.requireIntent(id));
+        .run(this.now(), targetId, leaseToken);
+      if (changes === 0) throw this.leaseError(targetId);
+      return this.view(this.requireIntent(targetId));
     });
   }
 
@@ -737,18 +788,19 @@ export class Board {
   }
 
   /** Undoes a completion: the completion intent now produces a fact recording why the board was not done. */
-  reopen(reason: string): { fact: FactRow; intent: IntentView } {
+  reopen(reason: string, worker?: string): { fact: FactRow; intent: IntentView } {
     return this.write(() => {
       const completed = this.getMeta("completed_intent");
       if (this.getMeta("status") !== "completed" || !completed) throw new BoardError("board is not completed");
       const text = redactText(reason);
       const factId = factIdOf(text);
+      const claimedBy = worker ? `reopen: ${worker}` : "reopen";
       this.db
         .query(
           `INSERT OR IGNORE INTO facts (id, text, status, claimed_by, evidence, created_at)
-           VALUES (?, ?, 'claimed', 'reopen', NULL, ?)`,
+           VALUES (?, ?, 'claimed', ?, NULL, ?)`,
         )
-        .run(factId, text, this.now());
+        .run(factId, text, claimedBy, this.now());
       this.db.query("UPDATE intents SET to_fact_id = ?, updated_at = ? WHERE id = ?").run(factId, this.now(), completed);
       this.setMeta("status", "active");
       this.db.exec("DELETE FROM meta WHERE key = 'completed_intent'");
@@ -778,14 +830,16 @@ export class Board {
 
   // ── whole-graph reads ──────────────────────────────────────────────────────
 
-  /** The full graph, for the Reason pass. `json` is structured; `timeline` reads like a log. Never includes lease tokens. */
+  /** The full graph, for the Reason pass. `json` is structured; `timeline` reads like a log; `summary` is compact. Never includes lease tokens. */
   export(format: string = "json"): string {
-    if (format !== "json" && format !== "timeline") {
-      throw new BoardError(`unsupported export format "${format}": use "json" or "timeline"`);
+    if (format !== "json" && format !== "timeline" && format !== "summary") {
+      throw new BoardError(`unsupported export format "${format}": use "json", "timeline", or "summary"`);
     }
     this.write(() => this.expireStale());
     const snapshot = snapshotFrom(this.db, 1_000_000, this.leaseMs);
-    return format === "timeline" ? timelineOf(snapshot) : JSON.stringify(chronological(snapshot), null, 2);
+    if (format === "timeline") return timelineOf(snapshot);
+    if (format === "summary") return summaryOf(snapshot);
+    return JSON.stringify(chronological(snapshot), null, 2);
   }
 
   close(): void {
@@ -946,11 +1000,13 @@ function timelineOf(snapshot: Snapshot): string {
     const produced = factById.get(intent.to_fact_id ?? "");
     // reopen() repoints the completion intent at its reason fact, so the completion happened at created_at
     // (complete() writes both stamps at once) and the reopen at the reason fact's creation.
-    if (intent.status === "concluded" && produced?.claimed_by === "reopen") {
+    if (intent.status === "concluded" && (produced?.claimed_by === "reopen" || produced?.claimed_by?.startsWith("reopen: ") || produced?.claimed_by?.startsWith("reopen ("))) {
+      const by = produced.claimed_by && produced.claimed_by !== "reopen" ? ` by ${produced.claimed_by}` : "";
       events.push({ at: intent.created_at, text: `BOARD COMPLETED by ${intent.claimed_by}\n  via: ${intent.id} from ${from}\n  ${intent.description}` });
-      events.push({ at: produced.created_at, text: `BOARD REOPENED (undoes ${intent.id})\n  reason: ${produced.id}\n  ${produced.text}` });
+      events.push({ at: produced.created_at, text: `BOARD REOPENED${by} (undoes ${intent.id})\n  reason: ${produced.id}\n  ${produced.text}` });
       continue;
     }
+
     events.push({ at: intent.created_at, text: `INTENT DECLARED ${intent.id} by ${intent.created_by}\n  from: ${from}\n  ${intent.description}` });
     if (intent.status !== "concluded") continue;
     const text =
@@ -961,4 +1017,29 @@ function timelineOf(snapshot: Snapshot): string {
   }
   events.sort((a, b) => a.at - b.at);
   return events.map(e => `[${new Date(e.at).toISOString()}] ${e.text}`).join("\n\n");
+}
+
+function summaryOf(snapshot: Snapshot): string {
+  const openIntents = snapshot.intents.filter(i => i.status !== "concluded");
+  const recentFacts = snapshot.facts.slice(0, 10).map(f => ({
+    id: f.id,
+    status: f.status,
+    claimed_by: f.claimed_by,
+    from: f.from,
+    text: f.text,
+    evidence: f.evidence ? (f.evidence.length > 120 ? `${f.evidence.slice(0, 117)}...` : f.evidence) : null,
+  }));
+  const summary = {
+    board: snapshot.board,
+    counts: {
+      facts: snapshot.facts.length,
+      intents: snapshot.intents.length,
+      live_intents: openIntents.length,
+      hints: snapshot.hints.length,
+    },
+    live_intents: openIntents,
+    hints: snapshot.hints,
+    recent_facts: recentFacts,
+  };
+  return JSON.stringify(summary, null, 2);
 }

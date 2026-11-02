@@ -88,10 +88,10 @@ Ask the agent to investigate something open-ended with `cairn-search`, or drive 
 - Rejections are structured: tool errors carry a `code` (`intent_claimed`, `lease_lost`, `invalid_transition`, `reason_held`, …) plus `held_by` and `lease_expires_at` when a lease is involved, so a worker can tell a transient refusal from a permanent one.
 - `fact_claim` is idempotent (same text → same id; a repeat claim keeps the first row and adds any new `from` ids). `from` lists the facts it builds on (`"origin"` for the first), which draws its edges in the graph; without it the fact floats unconnected. `fact_dispute` marks a fact wrong; disputed facts cannot be cited as sources.
 
-- Two results carry health signals instead of refusing: `fact_claim` adds `warnings` when the fact has no worker name (it is attributed to the Reason-lease holder, or `unknown` when no lease is held) or no `from` (it would float), and `board_complete` adds `unfinished`, the intents still open or claimed when the board was closed. Completion is not blocked, matching Cairn, so a board can still close over an abandoned question — but the result says so.
+- Two results carry health signals instead of refusing: `fact_claim` adds `warnings` when the fact has no worker name (it is attributed to the Reason-lease holder, or the most recent controller worker) or no `from` (it would float), and `board_complete` adds `unfinished`, the intents still open or claimed when the board was closed. Completion is not blocked, matching Cairn, so a board can still close over an abandoned question — but the result says so.
 - `reason_claim` returns a `board` summary (fact and edge count, open and claimed intents, floating and unknown counts, hints), so a Reason pass has the graph in hand without a separate `board_export`.
 - `reason_release` after `board_complete` is not an error: completion already released the lease, so the release returns `{ released: false, note }` instead of failing.
-- `board_init` warns (`overlapping` + `warning`) when the new project shares its leading name family with an existing active board — e.g. `ghsa-w4c7-impact`, `ghsa-w4c7-backport` and `ghsa-w4c7-prod` are one task. It only warns, never refuses; the heuristic does not flag distinct tasks such as `litellm-bump` vs `litellm-hni`.
+- `board_init` warns (`overlapping` + `warning` + `suggested_project`) when the new project shares its leading name family with an existing active board — e.g. `ghsa-w4c7-impact`, `ghsa-w4c7-backport` and `ghsa-w4c7-prod` are one task. It provides `suggested_project` so agents can seamlessly continue without fragmenting task history. It only warns, never refuses.
 
 ### After a compaction
 
@@ -106,7 +106,7 @@ The board records nothing by itself, and an agent deep in a task can forget to c
 Cairn's dispatcher decides what runs next; inside omp only the agent can spawn subagents, so this extension advises the main session instead (`src/dispatch.ts`). At most every 30 s, on a main-session tool call, it reads each active board the session has used and compares it with its last look, using Cairn's triggers:
 
 - **open intents nobody has claimed** → one `cairn-dispatch` message asking for one `task` subagent per intent, each with its own worker name. An intent is announced once while it stays open, including intents already open when a session resumes a board; one that goes back to open (`intent_release`, or an expired lease) is announced again;
-- **more facts or hints, or the last open intent concluded** → a message asking for a Reason pass (`reason_claim`, `board_export`, then `board_complete`, which releases the Reason lease itself, or `intent_create` + `reason_release`). It carries the delta that fired it and the absolute totals (`Board now: N fact(s), M hint(s), K live intent(s)`). While any worker still holds an intent this prompt waits, then fires once they have all finished, so the controller does not close the board on half the results.
+- **more facts or hints, or the last open intent concluded** → a message asking for a Reason pass (`reason_claim`, `board_export` in `json`, `timeline` or compact `summary`, then `board_complete`, which releases the Reason lease itself, or `intent_create` + `reason_release`). It carries the delta that fired it and the absolute totals (`Board now: N fact(s), M hint(s), K live intent(s)`). While any worker still holds an intent this prompt waits, then fires once they have all finished, so the controller does not close the board on half the results.
 
 Messages carry only counts, short intent ids and the project name, never board text. A board that cannot be read, or a message that cannot be sent, is skipped: the hook never blocks a tool call. Subagents get no advice.
 
@@ -181,7 +181,7 @@ Sequence entries in one `advisors:` list must align. The snippet is indented two
 ### Stored data
 
 - The database is shared by every project that uses the same agent directory, and findings are stored in plain text. For sensitive work set `FACT_BOARD_DB` (or pass `project`) to keep data apart, and keep the file out of backups and sync.
-- Facts, evidence, dispute reasons, intents and hints are passed through best-effort credential redaction **before** they are stored. It is regex-based: it catches common shapes (`password=…`, `*token` / `*Token` keys, `*_secret`, API keys, `Bearer …`, AWS key ids, common provider tokens, private-key blocks), not arbitrary secrets. Do not treat the board as a safe place for credentials.
+- Facts, evidence, dispute reasons, intents and hints are passed through best-effort credential redaction **before** they are stored. It is regex-based: it catches common shapes (`password=…`, `nodekey`/`privkey` hex, Ethereum keystore JSON, `passfile`/`passphrase`, `*token` / `*Token` keys, `*_secret`, API keys, `Bearer …`, AWS key ids, common provider tokens, private-key blocks), not arbitrary secrets. Do not treat the board as a safe place for credentials.
 - The `redact-output` feature applies the same rules to command/execution output (`bash`, `eval`) only. Reading or searching files (`read`, `grep`, `glob`, `find`) is not redacted, because rewriting source code corrupts what the agent sees; a file that contains a secret is therefore not masked by this feature. Output of a `bash` command that runs in the background (an async job, or one moved to the background while running) arrives as a job notification rather than a tool result, so it is not redacted either. It is off by default.
 
 ## Concurrency
@@ -190,7 +190,7 @@ The database runs in WAL mode with a busy timeout, so the viewer, many writers a
 
 ## Upgrading from 0.1
 
-0.1 kept a flat set of facts/intents/hints. 0.2 adds graph edges, `origin`/`goal`, the Reason lease, lease tokens, and completion. Existing 0.1 boards are migrated in place when first opened; `intent_create` now requires `from` and a `reason_token`, and `intent_conclude` now produces the fact.
+0.1 kept a flat set of facts/intents/hints. 0.2 adds graph edges, `origin`/`goal`, the Reason lease, lease tokens, and completion. Existing 0.1 boards are migrated in place when first opened; `intent_create` accepts `from` (defaults to `"origin"`) and a `reason_token`, and `intent_conclude` produces the fact.
 
 ## Development
 

@@ -1,7 +1,22 @@
 # Changelog
 
-## 0.6.0 — 2026-10-30
+## 0.6.1 — 2026-11-02
 
+### Added
+
+- **Safe Prefix Resolution**: `getFact`, `getIntent`, `claimIntent`, `heartbeatIntent`, `concludeIntent`, `releaseIntent`, and `validateSources` accept unambiguous short IDs (length >= 8). Matches are resolved using `substr(id, 1, len) = prefix` rather than SQLite `LIKE` to avoid wildcard collision on `f_<sha1>` underscores. Multiple matches throw `ambiguous_id`.
+- **Token-Efficient Summary Export**: `board_export({ format: "summary" })` returns a compact JSON summary containing board status, intent/fact/hint counts, active (`open`/`claimed`) intents, standing hints, and the 10 most recent facts with truncated evidence.
+- **Project Overlap Suggestions**: `board_init` returns `suggested_project` in the warning payload when an active board shares a name family, giving agents a direct project name to continue on.
+- **Structured Completion Errors & Attributed Reopen**: `claimFact` on a completed board throws `BoardError` with `code: "board_completed"`, `completed_intent`, and `suggested_reason`. `reopen(reason, worker)` accepts caller identity and attributes the reopen fact accordingly.
+- **Sensitive Material Redaction**: Added regex rules in `src/redact.ts` for 32-64 hex nodekeys/privkeys, Ethereum/Geth V3 keystore JSON (`ciphertext`/`mac`), and short `passfile`/`passphrase` assignments.
+
+### Fixed
+
+- **Fact Provenance Loss**: Controller identity is preserved across `clearReason()` and `reason_release` as `controller_worker` in `meta`, eliminating the regression where post-release facts defaulted to `unknown`. Subagents claiming intents can no longer overwrite controller attribution.
+- **Write-Tool Hook Normalization**: Calls to `write xd://<tool>` are normalized to the target board tool name and parsed JSON content before passing to `recordToolUse` and `nudgeOnCall`, ensuring compaction summaries retain project tracking and in-session reminders reset properly on board writes.
+- **Dispatcher Write-Tool Race Alarms**: Suppressed `dispatchFor` in the `tool_call` hook when the in-flight tool is an active board write (`intent_*`, `fact_*`, `board_*`), preventing false-alarm dispatch messages caused by pre-execution database reads.
+- **Parameter Aliases**: Added ergonomic aliases across tools: `hint_write` accepts `text`/`hint`/`message`; `board_reopen` accepts `why`/`explanation`; `intent_create` defaults `from` to `"origin"` if omitted; `intent_conclude` accepts `result`/`text`.
+## 0.6.0 — 2026-10-30
 ### Added
 
 - `intent_claim` returns `hint_count`, the board's total hint count, next to the newest 10 hints. A worker whose `hint_count` exceeds `hints.length` knows it saw only the newest slice and can read the rest (`hint_query`, or the exported board) before deciding.

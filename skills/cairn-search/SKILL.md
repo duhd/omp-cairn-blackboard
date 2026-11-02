@@ -27,7 +27,7 @@ The tools may not appear in the tool list; omp mounts them under `xd://` instead
 
 1. **Init** — `board_init({ origin, goal })`. State what is known and what counts as done. **Continuing earlier work?** Run `board_list` first to find the board, then `board_export` on it; the board is not loaded into your context for you.
 2. **Bootstrap** — attempt the problem directly. If solved, report it with the facts that prove it; `board_complete` once the user confirms (or right away if the user asked you to close the board yourself), and stop.
-3. **Reason** — `reason_claim(worker)` for the Reason lease, then `board_export()` to read the whole graph.
+3. **Reason** — `reason_claim(worker)` for the Reason lease, then `board_export()` to read the whole graph (or `format: "summary"` for large boards when only in-flight state is needed).
    - Goal met → report it; once the user confirms (or if the user asked you to close it yourself), `board_complete({ from: "comma-separated fact ids (or \"origin\")", description, worker })`. It also releases the Reason lease, so do not call `reason_release` afterwards. Until then, `reason_release`.
    - New directions → `intent_create({ description, from: "comma-separated fact ids (or \"origin\")", reason_token })`, at most **2** per pass, then `reason_release`.
 4. **Explore** — for the highest-value open intent, spawn one `task` subagent:

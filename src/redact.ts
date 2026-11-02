@@ -39,7 +39,22 @@ const RULES: ReadonlyArray<readonly [RegExp, string]> = [
   // which made a single line of dashes quadratic (40 KB took seconds). The cost: a key whose part
   // before the credential word is longer than 64 characters with no '-' in it is no longer masked.
   [
-    /\b([A-Za-z0-9_-]{0,64}(?:password|passwd|secret|api[_-]?key|apikey|access[_-]?key|private[_-]?key)["']?\s*[=:]\s*["']?)[^\s"']{8,}/gi,
+    /\b([A-Za-z0-9_-]{0,64}(?:password|passwd|secret|api[_-]?key|apikey|access[_-]?key|private[_-]?key|nodekey|privkey)["']?\s*[=:]\s*["']?)[^\s"']{8,}/gi,
+    "$1[REDACTED]",
+  ],
+  // Raw 32-64 hex nodekey / privkey assignments
+  [
+    /\b((?:nodekey|privkey|private[_-]?key)\s*[:=]\s*["']?)[0-9a-fA-F]{32,64}\b/gi,
+    "$1[REDACTED]",
+  ],
+  // Ethereum / Geth V3 keystore JSON ciphertext/mac
+  [
+    /(["'](?:ciphertext|mac)["']\s*:\s*)(["'])[0-9a-fA-F]{32,}\2/gi,
+    "$1$2[REDACTED]$2",
+  ],
+  // Short passfile / passphrase assignments without minimum length barrier
+  [
+    /\b((?:passfile|passphrase)["']?\s*[=:]\s*["']?)[^\s"']+/gi,
     "$1[REDACTED]",
   ],
   // token-shaped assignments in any casing (auth_token, AUTH_TOKEN, accessToken, AccessToken, IdToken —

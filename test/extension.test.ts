@@ -228,3 +228,120 @@ test("subagent sessions are never nudged", async () => {
   for (let i = 0; i < 30; i++) toolCall({ toolName: "read", input: { path: `p${i}` } }, sub);
   expect(nudges).toHaveLength(0);
 });
+
+test("dispatch messages are suppressed on board write tool calls to avoid race condition false alarms", async () => {
+  const dbPath = join(dir, "dispatch-suppression-board.db");
+  process.env.FACT_BOARD_DB = dbPath;
+  const { toolCall, tools, nudges } = await loadInstance("dispatch-suppression");
+  const main = sessionOf("session-suppress");
+
+  // Initialize board and create an open intent so dispatchAdvice has something to announce
+  await tools.board_init.execute("id1", { origin: "o", goal: "g", project: "suppress-p" });
+  const claimRes = await tools.reason_claim.execute("id2", { worker: "controller", project: "suppress-p" });
+  const tokenMatch = claimRes.content[0].text.match(/"reason_token":\s*"([^"]+)"/);
+  expect(tokenMatch).not.toBeNull();
+  const token = tokenMatch ? tokenMatch[1] : "";
+  await tools.intent_create.execute("id3", { description: "open task", reason_token: token, project: "suppress-p" });
+
+  // Register the project in session map via toolCall
+  toolCall({ toolName: "fact_claim", input: { text: "touch", project: "suppress-p" } }, main);
+  nudges.length = 0; // Clear initial messages
+
+  // Calling toolCall with a board write (e.g. intent_claim) MUST suppress dispatch
+  toolCall({ toolName: "intent_claim", input: { id: "some-id", worker: "worker-1", project: "suppress-p" } }, main);
+  toolCall({ toolName: "write", input: { path: "xd://intent_claim", content: "{}" } }, main);
+  expect(nudges.filter(n => n.includes("Fact board dispatcher"))).toHaveLength(0);
+
+  // Calling a non-board tool (e.g. read) AFTER look interval allows dispatch
+  // Simulate by calling read
+  toolCall({ toolName: "read", input: { path: "file.txt" } }, main);
+  // Dispatcher may announce the open intent now
+  expect(nudges.filter(n => n.includes("Fact board dispatcher")).length).toBeGreaterThanOrEqual(1);
+});
+
+test("board_init returns suggested_project when an overlapping board exists", async () => {
+  const dbPath = join(dir, "overlap-suggest-board.db");
+  process.env.FACT_BOARD_DB = dbPath;
+  const { tools } = await loadInstance("overlap-suggest");
+
+  // Initialize original board
+  await tools.board_init.execute("i1", { origin: "auth refactor v1", goal: "improve login flow", project: "auth-refactor-main" });
+
+  // Initialize a second board with overlapping name prefix
+  const res = await tools.board_init.execute("i2", { origin: "auth refactor v2", goal: "improve login flow", project: "auth-refactor-step2" });
+  const parsed = JSON.parse(res.content[0].text);
+  expect(parsed.suggested_project).toBe("auth-refactor-main");
+  expect(parsed.warning).toContain('suggested_project: "auth-refactor-main"');
+});
+
+test("tool-level parameter aliases work correctly through execute()", async () => {
+  const dbPath = join(dir, "tool-aliases-board.db");
+  process.env.FACT_BOARD_DB = dbPath;
+  const { tools } = await loadInstance("tool-aliases");
+
+  await tools.board_init.execute("i1", { origin: "alias test", goal: "verify tool-level aliases", project: "alias-p" });
+  const reasonRes = await tools.reason_claim.execute("i2", { worker: "controller", project: "alias-p" });
+  const token = JSON.parse(reasonRes.content[0].text).reason_token;
+
+  // intent_create with omitted 'from' (defaults to 'origin') and 'text' instead of 'description'
+  const intentRes = await tools.intent_create.execute("i3", { text: "intent with omitted from", reason_token: token, project: "alias-p" });
+  const intentObj = JSON.parse(intentRes.content[0].text);
+  expect(intentObj.description).toBe("intent with omitted from");
+  expect(intentObj.from).toEqual(["origin"]);
+
+  // intent_claim with 'intent_id' alias
+  const claimRes = await tools.intent_claim.execute("i4", { intent_id: intentObj.id, worker: "worker-alias", project: "alias-p" });
+  const claimObj = JSON.parse(claimRes.content[0].text);
+  expect(claimObj.lease_token).toBeDefined();
+
+  // intent_conclude with 'result' and 'intent_id' aliases
+  const concludeRes = await tools.intent_conclude.execute("i5", {
+    intent_id: intentObj.id,
+    lease_token: claimObj.lease_token,
+    result: "concluded via alias",
+    evidence: "alias test evidence",
+    project: "alias-p",
+  });
+  const concludeObj = JSON.parse(concludeRes.content[0].text);
+  expect(concludeObj.fact.text).toBe("concluded via alias");
+
+  // hint_write with 'text' alias
+  const hintRes = await tools.hint_write.execute("i6", { text: "steering note via text alias", project: "alias-p" });
+  expect(JSON.parse(hintRes.content[0].text).content).toBe("steering note via text alias");
+
+  // board_complete
+  await tools.board_complete.execute("i7", { from: "origin", description: "goal reached", project: "alias-p" });
+
+  // board_reopen with 'why' alias and worker
+  const reopenRes = await tools.board_reopen.execute("i8", { why: "need extra checks", worker: "verifier", project: "alias-p" });
+  const reopenObj = JSON.parse(reopenRes.content[0].text);
+  expect(reopenObj.fact.text).toBe("need extra checks");
+  expect(reopenObj.fact.claimed_by).toBe("reopen: verifier");
+});
+
+test("calls to xd://fact_claim via write normalize toolName to reset nudges and track project", async () => {
+  const dbPath = join(dir, "xd-normalize-board.db");
+  process.env.FACT_BOARD_DB = dbPath;
+  const { toolCall, compacting, nudges } = await loadInstance("xd-normalize");
+  const main = sessionOf("session-xd-norm");
+
+  // 20 read calls
+  for (let i = 0; i < 20; i++) toolCall({ toolName: "read", input: { path: `p${i}` } }, main);
+
+  // Writing to xd://fact_claim should be recognized as a board write and reset nudge counter
+  toolCall({
+    toolName: "write",
+    input: {
+      path: "xd://fact_claim",
+      content: JSON.stringify({ project: "xd-tracked-proj", text: "finding milestone" }),
+    },
+  }, main);
+
+  // Another 20 read calls should stay silent because counter was reset at call 20
+  for (let i = 0; i < 20; i++) toolCall({ toolName: "read", input: { path: `q${i}` } }, main);
+  expect(nudges).toHaveLength(0);
+
+  // Compaction should also successfully find the project extracted from JSON content
+  const context = compacting({ sessionId: "session-xd-norm" })?.context.join("\n") ?? "";
+  expect(context).toContain('project "xd-tracked-proj"');
+});
