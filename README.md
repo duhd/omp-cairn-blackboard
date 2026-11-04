@@ -119,7 +119,7 @@ Messages carry only counts, short intent ids and the project name, never board t
 
 The page follows the system light or dark theme, loads nothing from the network, and `/` focuses the filter box.
 
-Use the project picker to switch boards; the URL keeps `project` and `view`. Boards marked `completed` are hidden from that picker by default, and the board named in the URL always stays listed, so a link to a finished board still opens. Toggle **Show completed** beside the picker to show them.
+Use the project picker to switch boards; the URL keeps `project` and `view`. Boards marked `completed` are hidden from that picker by default, and the board named in the URL always stays listed, so a link to a finished board still opens. Toggle **Show completed** beside the picker to show them. The picker groups active and completed boards separately, and each completed board carries its completion time (`· 3d ago`, `· 2w ago`, `· 1mo ago`), newest first; the same time appears next to *Completed via* in the board summary.
 
 Outside omp, run the viewer from anywhere (it takes no arguments and reads the boards under `~/.omp/agent`):
 

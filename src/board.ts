@@ -84,6 +84,8 @@ export interface BoardInfo {
   origin: string | null;
   goal: string | null;
   completed_intent: string | null;
+  /** When the board reached its goal; null while active. Derived from the completion intent for boards completed before it was stored. */
+  completed_at: number | null;
   created_at: number | null;
   reason: { worker: string; heartbeat_at: number; created: number } | null;
 }
@@ -782,6 +784,7 @@ export class Board {
       this.insertSources(id, sources);
       this.setMeta("status", "completed");
       this.setMeta("completed_intent", id);
+      this.setMeta("completed_at", String(now));
       this.clearReason();
       return { intent: this.view(this.requireIntent(id)), unfinished };
     });
@@ -803,7 +806,7 @@ export class Board {
         .run(factId, text, claimedBy, this.now());
       this.db.query("UPDATE intents SET to_fact_id = ?, updated_at = ? WHERE id = ?").run(factId, this.now(), completed);
       this.setMeta("status", "active");
-      this.db.exec("DELETE FROM meta WHERE key = 'completed_intent'");
+      this.db.exec("DELETE FROM meta WHERE key IN ('completed_intent', 'completed_at')");
       return { fact: this.requireFact(factId), intent: this.view(this.requireIntent(completed)) };
     });
   }
@@ -849,15 +852,27 @@ export class Board {
 
 // ── snapshots (used by export and by the read-only viewer) ───────────────────
 
+/** Stored at completion; boards completed before that was recorded fall back to their completion intent's last update. */
+function completedAtOf(db: Database, stored: string | undefined, intentId: string | null): number | null {
+  const value = Number(stored);
+  if (stored !== undefined && Number.isFinite(value)) return value;
+  if (!intentId) return null;
+  if (!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'intents'").get()) return null;
+  return db.query<{ updated_at: number }, [string]>("SELECT updated_at FROM intents WHERE id = ?").get(intentId)?.updated_at ?? null;
+}
+
 function infoFrom(db: Database): BoardInfo {
   const meta = new Map(db.query<{ key: string; value: string }, []>("SELECT key, value FROM meta").all().map(r => [r.key, r.value]));
   const reasonWorker = meta.get("reason_worker");
+  const completedIntent = meta.get("completed_intent") ?? null;
+  const completedAt = completedAtOf(db, meta.get("completed_at"), completedIntent);
   return {
     initialized: meta.has("origin") && meta.has("goal"),
     status: meta.get("status") === "completed" ? "completed" : "active",
     origin: meta.get("origin") ?? null,
     goal: meta.get("goal") ?? null,
-    completed_intent: meta.get("completed_intent") ?? null,
+    completed_intent: completedIntent,
+    completed_at: completedAt,
     created_at: meta.has("created_at") ? Number(meta.get("created_at")) : null,
     reason: reasonWorker
       ? { worker: reasonWorker, heartbeat_at: Number(meta.get("reason_heartbeat_at") ?? 0), created: Number(meta.get("reason_created") ?? 0) }
@@ -934,6 +949,8 @@ export interface BoardSummary {
   edges: number;
   /** Newest fact, intent update or hint, or the board's creation when it has none. */
   last_activity: number | null;
+  /** When the board reached its goal; null while active or for a board that was never completed. */
+  completed_at: number | null;
 }
 
 /**
@@ -947,17 +964,23 @@ export function listBoards(basePath: string): BoardSummary[] {
     const snapshot = readSnapshot(projectDbPath(basePath, project || undefined));
     if ("missing" in snapshot) continue;
     if ("legacy" in snapshot) {
-      summaries.push({ project, status: "legacy", origin: null, goal: null, facts: 0, intents: 0, last_activity: null });
+      summaries.push({ project, status: "legacy", origin: null, goal: null, facts: 0, intents: 0, last_activity: null, completed_at: null });
       continue;
     }
     const { board } = snapshot;
     if (!board.initialized) continue;
     const stamps = [board.created_at, ...snapshot.facts.map(f => f.created_at), ...snapshot.intents.map(i => i.updated_at), ...snapshot.hints.map(h => h.created_at)];
     const last = Math.max(0, ...stamps.filter((t): t is number => t !== null));
-    summaries.push({ project, status: board.status, origin: board.origin, goal: board.goal, facts: snapshot.facts.length, intents: snapshot.intents.length, edges: snapshot.edges, last_activity: last || null });
+    summaries.push({ project, status: board.status, origin: board.origin, goal: board.goal, facts: snapshot.facts.length, intents: snapshot.intents.length, edges: snapshot.edges, last_activity: last || null, completed_at: board.completed_at });
   }
-  const rank = (s: BoardSummary) => (s.status === "active" ? 0 : 1);
-  return summaries.sort((a, b) => rank(a) - rank(b) || (b.last_activity ?? 0) - (a.last_activity ?? 0));
+  return summaries.sort((a, b) => {
+    const activeDiff = Number(a.status !== "active") - Number(b.status !== "active");
+    if (activeDiff !== 0) return activeDiff;
+    // Within each group the most recent first: activity for active boards, completion time for finished ones.
+    const aWhen = a.status === "completed" ? (a.completed_at ?? a.last_activity ?? 0) : (a.last_activity ?? 0);
+    const bWhen = b.status === "completed" ? (b.completed_at ?? b.last_activity ?? 0) : (b.last_activity ?? 0);
+    return bWhen - aWhen;
+  });
 }
 
 function chronological(snapshot: Snapshot): Snapshot {

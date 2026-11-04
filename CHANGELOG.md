@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0 — 2026-11-04
+
+### Added
+
+- **Board Completion Time**: `board_complete` records `completed_at` in `meta`; `BoardInfo.completed_at`, `BoardSummary.completed_at` and `board_list` (ISO) expose it, and `board_reopen` clears it. Boards completed before this version derive the timestamp from their completion intent, so existing boards need no migration.
+- **Completion Time in the Viewer Picker**: the project picker groups active and completed boards, labels each finished board with its completion age (`3d ago`, `2w ago`, `1mo ago`), orders finished boards newest completion first, and shows the same age beside *Completed via* in the board summary. The default board goes through the same pipeline, so a completed default board carries its time and honours **Show completed**.
+
+### Changed
+
+- `listBoards` orders completed boards by completion time (falling back to last activity) instead of last activity alone; active boards keep their previous order.
+- The picker rebuilds only when its visible labels change and never while it has focus, so an open dropdown is not replaced mid-selection.
+
 ## 0.6.1 — 2026-11-02
 
 ### Added

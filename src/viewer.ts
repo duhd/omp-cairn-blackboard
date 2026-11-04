@@ -9,6 +9,7 @@
  * it with textContent only, and the page loads nothing from the network.
  */
 import { listBoards, listProjects, projectDbPath, readSnapshot, resolveDbPath } from "./board";
+import type { BoardSummary } from "./board";
 import { buildGraph } from "./graph";
 
 export interface ViewerHandle {
@@ -21,13 +22,24 @@ const SNAPSHOT_LIMIT = 500;
 function boardPayload(basePath: string, project: string | null) {
   // A board that cannot be read must not take the whole viewer down (it polls every 2 s); an unknown status is
   // "active" so an uninitialized or unlisted board is never hidden by mistake.
-  let status: Record<string, string> = {};
+  let summaries = new Map<string, BoardSummary>();
   try {
-    status = Object.fromEntries(listBoards(basePath).map(b => [b.project, b.status]));
+    summaries = new Map(listBoards(basePath).map(b => [b.project, b]));
   } catch {
-    status = {};
+    summaries = new Map();
   }
-  const projects = listProjects(basePath).map(name => ({ name, status: status[name] ?? "active" }));
+  // Every board the picker offers is an entry here, including the default board (""), which has no file under
+  // fact-boards/. A summary is absent for a board that was never initialized; it is still offered as active.
+  // Active boards keep the alphabetical file order; completed ones follow, most recently completed first.
+  const projects = [{ name: "", summary: summaries.get("") }, ...listProjects(basePath).map(name => ({ name, summary: summaries.get(name) }))]
+    .map(({ name, summary }) => ({ name, status: summary?.status ?? "active", completed_at: summary?.completed_at ?? null, last_activity: summary?.last_activity ?? null }));
+  projects.sort((a, b) => {
+    const completedDiff = Number(a.status === "completed") - Number(b.status === "completed");
+    if (completedDiff !== 0) return completedDiff;
+    // Active boards keep the alphabetical file order; only finished boards are ordered by recency.
+    if (a.status !== "completed") return 0;
+    return (b.completed_at ?? b.last_activity ?? 0) - (a.completed_at ?? a.last_activity ?? 0);
+  });
   const now = Date.now();
   const base = { project, projects, now };
   try {
@@ -310,6 +322,20 @@ function svg(tag, attrs, text) {
 function clip(s, n) { s = String(s == null ? "" : s); return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 function colorFor(name) { var h = 2166136261; for (var i = 0; i < name.length; i++) { h ^= name.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return "hsl(" + (h % 360) + " 50% 45%)"; }
 function ago(ts, now) { var s = Math.max(0, Math.round((now - ts) / 1000)); if (s < 60) return s + "s ago"; if (s < 3600) return Math.floor(s / 60) + "m ago"; if (s < 86400) return Math.floor(s / 3600) + "h ago"; return Math.floor(s / 86400) + "d ago"; }
+// Completion is long-lived, so it reads in coarse units: minutes, hours, days, weeks, months, years.
+function whenAgo(ts, now) {
+  var s = Math.max(0, Math.round((now - ts) / 1000));
+  if (s < 60) return "just now";
+  var m = Math.floor(s / 60);
+  if (m < 60) return m + "m ago";
+  var h = Math.floor(m / 60);
+  if (h < 24) return h + "h ago";
+  var days = Math.floor(h / 24);
+  if (days < 7) return days + "d ago";
+  if (days < 30) return Math.floor(days / 7) + "w ago";
+  if (days < 365) return Math.floor(days / 30) + "mo ago";
+  return Math.floor(days / 365) + "y ago";
+}
 function matches(o) { if (!state.filter) return true; return JSON.stringify(o).toLowerCase().indexOf(state.filter) !== -1; }
 function owner(o) { return o.claimed_by || o.created_by || null; }
 function short(id) { return id === "origin" || id === "goal" ? id : id.slice(0, 10); }
@@ -448,6 +474,7 @@ function renderOverview(d) {
     var row = el("div", "flag");
     row.appendChild(el("b", "", "Completed via"));
     row.appendChild(refBtn(info.completed_intent));
+    if (info.completed_at) row.appendChild(el("span", "v", "· " + whenAgo(info.completed_at, d.now)));
     flags.appendChild(row);
   }
   if (d.floatingFacts && d.floatingFacts.length) flags.appendChild(flag("Floating facts", d.floatingFacts.length + " cite no source and come from no intent", "warn"));
@@ -632,11 +659,27 @@ function renderProjects(d) {
   var sel = document.getElementById("project");
   // Completed boards are hidden by default: they are history, not work in progress. The selected one always stays,
   // so a URL pointing at a completed board still works with the toggle off.
-  var names = [""].concat((d.projects || []).filter(function (p) { return state.showDone || p.status !== "completed" || p.name === state.project; }).map(function (p) { return p.name; }));
-  var key = names.join("|") + "#" + state.showDone;
+  var shown = (d.projects || []).filter(function (p) { return state.showDone || p.status !== "completed" || p.name === state.project; });
+  var rows = shown.map(function (p) {
+    var label = p.name || "(default)";
+    if (p.status === "completed") label += " · " + (p.completed_at ? whenAgo(p.completed_at, d.now) : "completed");
+    return { name: p.name, group: p.status === "completed" ? "Completed" : "Active", label: label };
+  });
+  // The completion age changes while the page is open, so the rebuilt key is the text actually shown.
+  var key = state.showDone + "#" + rows.map(function (r) { return r.group + ":" + r.name + ":" + r.label; }).join("|");
   if (sel.dataset.names === key && sel.value === state.project) return;
+  // Replacing the options would close a picker the reader has open; wait for the next poll after it loses focus.
+  if (sel === document.activeElement) return;
   sel.replaceChildren();
-  names.forEach(function (n) { var o = el("option", "", n || "(default)"); o.value = n; sel.appendChild(o); });
+  ["Active", "Completed"].forEach(function (group) {
+    var items = rows.filter(function (r) { return r.group === group; });
+    if (!items.length) return;
+    var og = document.createElement("optgroup"); og.label = group;
+    items.forEach(function (r) { var o = el("option", "", r.label); o.value = r.name; og.appendChild(o); });
+    sel.appendChild(og);
+  });
+  // Every board hidden (a completed default board with Show completed off) must still leave the control usable.
+  if (!sel.children.length) { var blank = el("option", "", "(default)"); blank.value = ""; sel.appendChild(blank); }
   sel.value = state.project; sel.dataset.names = key;
 }
 function syncUrl() {

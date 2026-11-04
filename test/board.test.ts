@@ -309,14 +309,36 @@ describe("completion", () => {
     expect(done.to_fact_id).toBe("goal");
     expect(done.from).toEqual([fact.id]);
     expect(board.info().status).toBe("completed");
+    expect(board.info().completed_at).toBeTypeOf("number");
+    // The meta row is the source; the completion intent's updated_at is only the fallback for older boards.
+    const raw = new Database(board.path);
+    const persisted = raw.query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'completed_at'").get()?.value;
+    raw.query("UPDATE intents SET updated_at = updated_at + 60000 WHERE id = ?").run(done.id);
+    raw.close();
+    expect(board.info().completed_at).toBe(Number(persisted));
+    expect(board.info().completed_at).not.toBe(done.updated_at + 60_000);
     expectRule(() => board.claimFact({ text: "late" }), "board is completed");
     expectRule(() => board.reasonClaim("controller"), "board is completed");
 
     const { fact: why } = board.reopen("the 500s persist with a larger pool");
     expect(board.info().status).toBe("active");
+    expect(board.info().completed_at).toBeNull();
     const exported = JSON.parse(board.export());
     expect(exported.intents.find((i: { id: string }) => i.id === done.id).to_fact_id).toBe(why.id);
     expect(board.reasonClaim("controller").worker).toBe("controller");
+  });
+
+  test("the completion time falls back to the completion intent for boards completed before it was stored", () => {
+    const { board } = started();
+    const fact = board.claimFact({ text: "proof" });
+    const done = board.complete({ from: [fact.id], description: "done", worker: "w" }).intent;
+    // Erase the stored timestamp the way a board written by an older version lacks it.
+    const raw = new Database(board.path);
+    raw.exec("DELETE FROM meta WHERE key = 'completed_at'");
+    raw.close();
+    // Read through a fresh connection, the path the viewer takes.
+    const snapshot = readSnapshot(board.path) as Snapshot;
+    expect(snapshot.board.completed_at).toBe(done.updated_at);
   });
 
   test("the timeline marks disputed facts and tells completion and reopen apart", () => {
@@ -656,7 +678,10 @@ describe("viewer", () => {
       expect(data.graph.edges).toContainEqual({ from: "origin", to: intent.id });
       expect(data.graph.nodes.find((n: { id: string }) => n.id === intent.id).status).toBe("claimed");
       expect(data.truncated).toBe(false);
-      expect(data.projects).toEqual([{ name: "alpha", status: "active" }]);
+      expect(data.projects).toEqual([
+        expect.objectContaining({ name: "", status: "active", completed_at: null }),
+        expect.objectContaining({ name: "alpha", status: "active", completed_at: null }),
+      ]);
       const alpha = await (await fetch(`${viewer.url}/api/board?project=alpha`)).json();
       expect(alpha.facts.map((f: { text: string }) => f.text)).toEqual(["alpha finding"]);
       expect((await (await fetch(`${viewer.url}/api/board?project=../x`)).json()).note).toContain("invalid project name");
@@ -686,6 +711,54 @@ describe("viewer", () => {
       board.claimFact({ text: "finding 500" });
       const above = await (await fetch(`${viewer.url}/api/board`)).json();
       expect([above.facts.length, above.truncated, above.limit]).toEqual([500, true, 500]);
+    } finally {
+      viewer.stop();
+    }
+  });
+
+  test("carries each board's completion time and lists finished boards newest first", async () => {
+    const base = join(tempDir(), "fact-board.db");
+    let clock = 1_000;
+    const at = (name: string) => newBoard({ now: () => clock }, projectDbPath(base, name));
+    const active = at("active");
+    active.init({ origin: "o", goal: "g" });
+    active.claimFact({ text: "still working" });
+    const earlier = at("earlier");
+    earlier.init({ origin: "o", goal: "g" });
+    clock = 2_000;
+    const firstDone = earlier.complete({ from: ["origin"], description: "one", worker: "w" }).intent;
+    clock = 6_000;
+    const later = at("later");
+    later.init({ origin: "o", goal: "g" });
+    clock = 7_000;
+    const secondDone = later.complete({ from: ["origin"], description: "two", worker: "w" }).intent;
+
+    const viewer = startViewer({ basePath: base, port: 0 });
+    try {
+      const data = await (await fetch(`${viewer.url}/api/board`)).json();
+      expect(data.projects.map((p: { name: string }) => p.name)).toEqual(["", "active", "later", "earlier"]);
+      expect(data.projects.map((p: { completed_at: number | null }) => p.completed_at)).toEqual([null, null, secondDone.updated_at, firstDone.updated_at]);
+      const completedPayload = await (await fetch(`${viewer.url}/api/board?project=earlier`)).json();
+      expect(completedPayload.board.completed_at).toBe(firstDone.updated_at);
+    } finally {
+      viewer.stop();
+    }
+  });
+
+  test("reports a completed default board with its completion time", async () => {
+    const base = join(tempDir(), "fact-board.db");
+    let clock = 4_000;
+    const board = newBoard({ now: () => clock }, base);
+    board.init({ origin: "o", goal: "g" });
+    clock = 5_000;
+    board.complete({ from: ["origin"], description: "default board done", worker: "w" });
+
+    const viewer = startViewer({ basePath: base, port: 0 });
+    try {
+      const data = await (await fetch(`${viewer.url}/api/board`)).json();
+      expect(data.projects).toEqual([
+        expect.objectContaining({ name: "", status: "completed", completed_at: 5_000 }),
+      ]);
     } finally {
       viewer.stop();
     }
@@ -734,6 +807,28 @@ describe("listBoards", () => {
     const base = join(tempDir("blackboard-list-"), "fact-board.db");
     newBoard({}, base).init({ origin: "o", goal: "g" });
     expect(listBoards(base).map(b => b.project)).toEqual([""]);
+  });
+
+  test("orders finished boards by completion time and clears it on reopen", () => {
+    const base = join(tempDir("blackboard-list-"), "fact-board.db");
+    let clock = 1_000;
+    const at = (name: string) => newBoard({ now: () => clock }, projectDbPath(base, name));
+    const one = at("one");
+    one.init({ origin: "o", goal: "g" });
+    clock = 3_000;
+    one.complete({ from: ["origin"], description: "one done", worker: "w" });
+    const two = at("two");
+    two.init({ origin: "o", goal: "g" });
+    clock = 8_000;
+    two.complete({ from: ["origin"], description: "two done", worker: "w" });
+
+    expect(listBoards(base).map(b => [b.project, b.completed_at])).toEqual([
+      ["two", 8_000],
+      ["one", 3_000],
+    ]);
+
+    two.reopen("the work is not actually done");
+    expect(listBoards(base).find(b => b.project === "two")?.completed_at).toBeNull();
   });
 });
 
