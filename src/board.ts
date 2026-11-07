@@ -824,7 +824,7 @@ export class Board {
   }
 
   queryHints(limit = 20): HintRow[] {
-    return this.db.query<HintRow, [number]>("SELECT * FROM hints ORDER BY created_at DESC LIMIT ?").all(limit);
+    return this.db.query<HintRow, [number]>("SELECT * FROM hints ORDER BY created_at DESC, rowid DESC LIMIT ?").all(limit);
   }
 
   private hintCount(): number {
@@ -908,7 +908,7 @@ export function snapshotFrom(db: Database, limit: number, leaseMs = envNumber("F
     .query<FactRow, [number]>("SELECT * FROM facts ORDER BY created_at DESC LIMIT ?")
     .all(limit)
     .map(row => ({ ...row, produced_by: producers.get(row.id) ?? [], from: factSources.get(row.id) ?? [] }));
-  const hints = db.query<HintRow, [number]>("SELECT * FROM hints ORDER BY created_at DESC LIMIT ?").all(limit);
+  const hints = db.query<HintRow, [number]>("SELECT * FROM hints ORDER BY created_at DESC, rowid DESC LIMIT ?").all(limit);
   // A fact with no source and no producing intent hangs off the graph: it cannot be traced to anything.
   const floatingFacts = facts.filter(f => f.produced_by.length === 0 && f.from.length === 0).map(f => f.id);
   const unknownFacts = facts.filter(f => f.claimed_by === "unknown").map(f => f.id);

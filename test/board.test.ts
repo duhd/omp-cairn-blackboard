@@ -207,6 +207,12 @@ describe("intent lease (compare-and-swap)", () => {
     expect(claimed.hint_count).toBe(12);
   });
 
+  test("hints written in the same millisecond come back newest-inserted first", () => {
+    const { board } = started({ now: () => 1_000 });
+    for (let i = 0; i < 3; i++) board.writeHint(`hint ${i}`);
+    expect(board.queryHints(10).map(h => h.content)).toEqual(["hint 2", "hint 1", "hint 0"]);
+  });
+
   test("release reopens the intent and invalidates the old token", () => {
     const { board, reason_token } = started();
     const intent = board.createIntent({ description: "probe", from: ["origin"], reasonToken: reason_token });

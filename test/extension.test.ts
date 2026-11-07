@@ -274,6 +274,19 @@ test("board_init returns suggested_project when an overlapping board exists", as
   expect(parsed.warning).toContain('suggested_project: "auth-refactor-main"');
 });
 
+test("board_init names the status of an overlapping board, so a completed one is not called active", async () => {
+  const dbPath = join(dir, "overlap-status-board.db");
+  process.env.FACT_BOARD_DB = dbPath;
+  const { tools } = await loadInstance("overlap-status");
+
+  await tools.board_init.execute("i1", { origin: "report v1", goal: "ship the report", project: "report-draft-a" });
+  await tools.board_complete.execute("i2", { from: "origin", description: "finished", worker: "w", project: "report-draft-a" });
+  const res = await tools.board_init.execute("i3", { origin: "report v2", goal: "ship the report", project: "report-draft-b" });
+  const parsed = JSON.parse(res.content[0].text);
+  expect(parsed.overlapping.map((b: { project: string; status: string }) => [b.project, b.status])).toEqual([["report-draft-a", "completed"]]);
+  expect(parsed.warning).toContain("active or recently completed");
+});
+
 test("tool-level parameter aliases work correctly through execute()", async () => {
   const dbPath = join(dir, "tool-aliases-board.db");
   process.env.FACT_BOARD_DB = dbPath;

@@ -165,10 +165,10 @@ export default function blackboard(pi: ExtensionAPI): void {
         const init = boardFor(params.project).init({ origin: params.origin, goal: params.goal });
         const result: Record<string, unknown> = { ...init, next: nextSteps(params.project) };
         if (others.length > 0) {
-          result.overlapping = others.map(b => ({ project: b.project, facts: b.facts, goal: b.goal }));
+          result.overlapping = others.map(b => ({ project: b.project, status: b.status, facts: b.facts, goal: b.goal }));
           const suggested = others[0].project;
           result.suggested_project = suggested;
-          result.warning = `${others.length} active board(s) look like the same task (${others.map(b => b.project).join(", ")}). Consider continuing on suggested_project: "${suggested}" instead of splitting the history, or proceed if this is truly a separate task.`;
+          result.warning = `${others.length} active or recently completed board(s) look like the same task (${others.map(b => b.project).join(", ")}). Consider continuing on suggested_project: "${suggested}" instead of splitting the history, or proceed if this is truly a separate task.`;
         }
         return result;
       });

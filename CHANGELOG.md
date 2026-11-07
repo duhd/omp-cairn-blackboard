@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1 — 2026-11-07
+
+### Fixed
+
+- Hints written in the same millisecond came back oldest-first, because the hint queries sorted on `created_at` alone. `intent_claim` returns only the newest 10 hints, so when a burst of hints shared a timestamp a worker could miss the latest steering. `queryHints` and the viewer/export snapshot now break ties on `rowid`, newest first.
+- The `board_init` overlap warning said "active board(s)" although it also lists boards completed in the last 7 days. It now says "active or recently completed", and each `overlapping` entry carries its `status`.
+
 ## 0.7.0 — 2026-11-04
 
 ### Added
