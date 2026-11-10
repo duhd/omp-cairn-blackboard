@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2 — 2026-11-10
+
+### Fixed
+
+- The dispatcher's board-write check in `src/index.ts` kept its own copy of the write-tool list and omitted `intent_heartbeat`, so a heartbeat was treated as ordinary work and `cairn-dispatch` advice fired right after a board write. It now reuses the single `WRITE_TOOLS` set from `src/session-boards.ts`, and a test pins the set so the two cannot drift.
+
 ## 0.7.1 — 2026-11-07
 
 ### Fixed
