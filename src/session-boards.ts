@@ -66,7 +66,7 @@ export const MAX_NUDGES_PER_SESSION = 3;
 
 // Only WRITE tools reset callsSinceWrite. Read tools (board_list, board_export, fact_query, hint_query)
 // must NOT reset it: a session that reads its board but never records new work still needs to be nudged.
-const WRITE_TOOLS: Record<string, true> = {
+export const WRITE_TOOLS: Record<string, true> = {
   board_init: true, board_complete: true, board_reopen: true,
   fact_claim: true, fact_dispute: true,
   reason_claim: true, reason_release: true,

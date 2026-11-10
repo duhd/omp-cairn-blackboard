@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { MAX_NUDGES_PER_SESSION, NUDGE_AFTER_CALLS, NUDGE_COOLDOWN_MS, nudgeOnCall, type NudgeState } from "../src/session-boards";
+import { MAX_NUDGES_PER_SESSION, NUDGE_AFTER_CALLS, NUDGE_COOLDOWN_MS, WRITE_TOOLS, nudgeOnCall, type NudgeState } from "../src/session-boards";
 
 const T0 = NUDGE_COOLDOWN_MS * 10;
 
@@ -71,4 +71,18 @@ test("sessions are counted separately", () => {
   calls(state, "a", "read", NUDGE_AFTER_CALLS - 1, T0);
   expect(calls(state, "b", "read", 1, T0)).toHaveLength(0);
   expect(calls(state, "a", "read", 1, T0)).toHaveLength(1);
+});
+
+test("WRITE_TOOLS is the single board-write set shared by the nudge and the dispatcher gate", () => {
+  // Regression: index.ts used its own copy of this list and dropped intent_heartbeat, so a heartbeat was
+  // treated as ordinary work and the dispatcher fired after it. index.ts now imports this set, so the two
+  // cannot drift; this pins the set so an accidental removal fails here.
+  const expected = [
+    "board_init", "board_complete", "board_reopen",
+    "fact_claim", "fact_dispute",
+    "reason_claim", "reason_release",
+    "intent_create", "intent_claim", "intent_heartbeat", "intent_conclude", "intent_release",
+    "hint_write",
+  ];
+  expect(Object.keys(WRITE_TOOLS).sort()).toEqual(expected.sort());
 });

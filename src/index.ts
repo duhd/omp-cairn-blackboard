@@ -13,7 +13,7 @@ import { Board, BoardError, listBoards, parseIdList, readSnapshot, resolveDbPath
 import type { Snapshot } from "./board";
 import { dispatchAdvice, projectLeases } from "./dispatch";
 import type { Checkpoint } from "./dispatch";
-import { compactionContext, nudgeOnCall, recordToolUse } from "./session-boards";
+import { WRITE_TOOLS, compactionContext, nudgeOnCall, recordToolUse } from "./session-boards";
 import type { NudgeState, SessionBoards } from "./session-boards";
 import { checkForUpdate, installedPlugin, updateCachePath } from "./update-check";
 import { startViewer } from "./viewer";
@@ -441,8 +441,7 @@ export default function blackboard(pi: ExtensionAPI): void {
     try {
       const nudge = nudgeOnCall(shared.nudges, sessionId, normalizedTool, now);
       if (nudge) pi.sendMessage({ customType: "cairn-nudge", display: true, content: nudge }, { deliverAs: "aside" });
-      const isBoardWrite =
-        ["intent_create", "intent_claim", "intent_conclude", "intent_release", "board_complete", "board_reopen", "board_init", "fact_claim", "fact_dispute", "reason_claim", "reason_release", "hint_write"].includes(normalizedTool);
+      const isBoardWrite = WRITE_TOOLS[normalizedTool] === true;
       if (!isBoardWrite) {
         for (const advice of dispatchFor(sessionId, now)) {
           pi.sendMessage({ customType: "cairn-dispatch", display: true, content: advice }, { deliverAs: "aside" });
