@@ -37,6 +37,26 @@ export class BoardError extends Error {
   }
 }
 
+/** Longest free-text field a board stores. Every viewer poll and export reads whole rows, so an unbounded field lets one agent make the board unusable. */
+export const MAX_TEXT = 16_000;
+/** Longest worker or author label. */
+export const MAX_NAME = 200;
+
+function limited(field: string, value: string, max: number): string {
+  if (value.length > max) {
+    throw new BoardError(`${field} is ${value.length} characters; the limit is ${max}. Shorten it, or keep the detail in a file and cite its path.`, {
+      code: "too_long",
+      details: { field, limit: max },
+    });
+  }
+  return value;
+}
+
+/** Free text as stored: inside the length limit, with credential-shaped values redacted. */
+function stored(field: string, value: string): string {
+  return redactText(limited(field, value, MAX_TEXT));
+}
+
 export const ORIGIN = "origin";
 export const GOAL = "goal";
 
@@ -84,7 +104,7 @@ export interface BoardInfo {
   origin: string | null;
   goal: string | null;
   completed_intent: string | null;
-  /** When the board reached its goal; null while active. Derived from the completion intent for boards completed before it was stored. */
+  /** When the board reached its goal: the last update of its completion intent. Null while active. */
   completed_at: number | null;
   created_at: number | null;
   reason: { worker: string; heartbeat_at: number; created: number } | null;
@@ -179,7 +199,8 @@ const INTENT_COLUMNS: ReadonlyArray<readonly [string, string]> = [
   ["to_fact_id", "TEXT"],
 ];
 
-export const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/** A project is a file name: no separators, and not a Windows device name (con, nul, com1, ...), which Windows resolves to the device even with an extension. */
+export const PROJECT_NAME = /^(?!(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$))[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/i;
 
 function defaultDbPath(): string {
   const override = process.env.FACT_BOARD_DB;
@@ -192,7 +213,7 @@ function defaultDbPath(): string {
 export function projectDbPath(basePath: string, project?: string): string {
   if (!project) return basePath;
   if (!PROJECT_NAME.test(project)) {
-    throw new BoardError(`invalid project name "${project}": use letters, digits, '.', '_' or '-' (max 64)`);
+    throw new BoardError(`invalid project name "${project}": use letters, digits, '.', '_' or '-' (max 64), and not a Windows device name such as con, nul, aux, com1 or lpt1`);
   }
   return join(dirname(basePath), "fact-boards", `${project}.db`);
 }
@@ -323,8 +344,8 @@ export class Board {
 
   /** Declares the origin (what is known) and goal (the success condition). Idempotent for identical values. */
   init(input: { origin: string; goal: string }): BoardInfo {
-    const origin = redactText(input.origin);
-    const goal = redactText(input.goal);
+    const origin = stored("origin", input.origin);
+    const goal = stored("goal", input.goal);
     return this.write(() => {
       const current = this.info();
       if (current.initialized) {
@@ -364,18 +385,18 @@ export class Board {
           },
         });
       }
-      const text = redactText(input.text);
+      const text = stored("text", input.text);
       // The id is derived from the stored text, so identical findings dedupe to one row.
       const id = factIdOf(text);
       const sources = input.from && input.from.length > 0 ? this.validateSources(input.from) : [];
       if (sources.includes(id)) throw new BoardError("a fact cannot be its own source");
-      const claimedBy = input.claimedBy ?? (this.getMeta("reason_worker") || this.getMeta("controller_worker") || "unknown");
+      const claimedBy = limited("claimed_by", input.claimedBy ?? (this.getMeta("reason_worker") || this.getMeta("controller_worker") || "unknown"), MAX_NAME);
       this.db
         .query(
           `INSERT OR IGNORE INTO facts (id, text, status, claimed_by, evidence, created_at)
            VALUES (?, ?, 'claimed', ?, ?, ?)`,
         )
-        .run(id, text, claimedBy, input.evidence ? redactText(input.evidence) : null, this.now());
+        .run(id, text, claimedBy, input.evidence ? stored("evidence", input.evidence) : null, this.now());
       // A repeated claim keeps its first row but may add sources it did not cite before.
       const insert = this.db.query("INSERT OR IGNORE INTO fact_sources (fact_id, source_id) VALUES (?, ?)");
       for (const source of sources) insert.run(id, source);
@@ -426,7 +447,9 @@ export class Board {
   /** Marks a fact disputed and appends the reason to its evidence. Never deletes. */
   disputeFact(id: string, reason?: string): FactRow {
     const fact = this.requireFact(id);
-    const suffix = reason ? ` [disputed: ${redactText(reason)}]` : "";
+    const suffix = reason ? ` [disputed: ${stored("reason", reason)}]` : "";
+    // Each call is bounded, but every dispute appends: cap the total so repeated disputes cannot grow one row without limit.
+    if (suffix) limited("evidence", (fact.evidence ?? "") + suffix, 2 * MAX_TEXT);
     this.db
       .query("UPDATE facts SET status = 'disputed', evidence = COALESCE(evidence, '') || ? WHERE id = ?")
       .run(suffix, fact.id);
@@ -463,6 +486,7 @@ export class Board {
   /** Only one worker holds the Reason lease at a time; it alone may declare intents (capped per pass). */
   reasonClaim(worker: string): ReasonLease {
     return this.write(() => {
+      limited("worker", worker, MAX_NAME);
       this.expireStale();
       this.assertActive();
       this.requireInit();
@@ -598,7 +622,7 @@ export class Board {
           `INSERT INTO intents (id, description, status, created_by, claimed_by, lease_token, heartbeat_at, to_fact_id, created_at, updated_at)
            VALUES (?, ?, 'open', ?, NULL, NULL, NULL, NULL, ?, ?)`,
         )
-        .run(id, redactText(input.description), this.getMeta("reason_worker"), now, now);
+        .run(id, stored("description", input.description), this.getMeta("reason_worker"), now, now);
       this.insertSources(id, sources);
       this.setMeta("reason_created", String(created + 1));
       this.setMeta("reason_heartbeat_at", String(now));
@@ -631,6 +655,7 @@ export class Board {
   /** open -> claimed. Returns a lease token that heartbeat/conclude/release must present. */
   claimIntent(id: string, worker: string): ClaimedIntent {
     return this.write(() => {
+      limited("worker", worker, MAX_NAME);
       this.expireStale();
       this.assertActive();
       const row = this.requireIntent(id);
@@ -721,14 +746,14 @@ export class Board {
       }
       const row = this.requireIntent(input.id);
       const targetId = row.id;
-      const text = redactText(input.fact);
+      const text = stored("fact", input.fact);
       const factId = factIdOf(text);
       this.db
         .query(
           `INSERT OR IGNORE INTO facts (id, text, status, claimed_by, evidence, created_at)
            VALUES (?, ?, 'claimed', ?, ?, ?)`,
         )
-        .run(factId, text, row.claimed_by ?? "unknown", redactText(evidence), this.now());
+        .run(factId, text, row.claimed_by ?? "unknown", stored("evidence", evidence), this.now());
       const { changes } = this.db
         .query(
           `UPDATE intents SET status = 'concluded', to_fact_id = ?, lease_token = NULL, updated_at = ?
@@ -773,6 +798,7 @@ export class Board {
           "SELECT id, status, description FROM intents WHERE status IN ('open','claimed') ORDER BY created_at",
         )
         .all();
+      const author = limited("worker", input.worker ?? (this.getMeta("reason_worker") || "board"), MAX_NAME);
       const id = crypto.randomUUID();
       const now = this.now();
       this.db
@@ -780,11 +806,10 @@ export class Board {
           `INSERT INTO intents (id, description, status, created_by, claimed_by, lease_token, heartbeat_at, to_fact_id, created_at, updated_at)
            VALUES (?, ?, 'concluded', ?, ?, NULL, NULL, ?, ?, ?)`,
         )
-        .run(id, redactText(input.description), input.worker ?? (this.getMeta("reason_worker") || "board"), input.worker ?? (this.getMeta("reason_worker") || "board"), GOAL, now, now);
+        .run(id, stored("description", input.description), author, author, GOAL, now, now);
       this.insertSources(id, sources);
       this.setMeta("status", "completed");
       this.setMeta("completed_intent", id);
-      this.setMeta("completed_at", String(now));
       this.clearReason();
       return { intent: this.view(this.requireIntent(id)), unfinished };
     });
@@ -795,9 +820,9 @@ export class Board {
     return this.write(() => {
       const completed = this.getMeta("completed_intent");
       if (this.getMeta("status") !== "completed" || !completed) throw new BoardError("board is not completed");
-      const text = redactText(reason);
+      const text = stored("reason", reason);
       const factId = factIdOf(text);
-      const claimedBy = worker ? `reopen: ${worker}` : "reopen";
+      const claimedBy = worker ? `reopen: ${limited("worker", worker, MAX_NAME)}` : "reopen";
       this.db
         .query(
           `INSERT OR IGNORE INTO facts (id, text, status, claimed_by, evidence, created_at)
@@ -806,7 +831,7 @@ export class Board {
         .run(factId, text, claimedBy, this.now());
       this.db.query("UPDATE intents SET to_fact_id = ?, updated_at = ? WHERE id = ?").run(factId, this.now(), completed);
       this.setMeta("status", "active");
-      this.db.exec("DELETE FROM meta WHERE key IN ('completed_intent', 'completed_at')");
+      this.db.exec("DELETE FROM meta WHERE key = 'completed_intent'");
       return { fact: this.requireFact(factId), intent: this.view(this.requireIntent(completed)) };
     });
   }
@@ -817,7 +842,7 @@ export class Board {
     const id = crypto.randomUUID();
     this.db
       .query("INSERT INTO hints (id, content, created_at) VALUES (?, ?, ?)")
-      .run(id, redactText(content), this.now());
+      .run(id, stored("content", content), this.now());
     const row = this.db.query<HintRow, [string]>("SELECT * FROM hints WHERE id = ?").get(id);
     if (!row) throw new BoardError(`hint ${id} missing after insert`);
     return row;
@@ -852,12 +877,12 @@ export class Board {
 
 // ── snapshots (used by export and by the read-only viewer) ───────────────────
 
-/** Stored at completion; boards completed before that was recorded fall back to their completion intent's last update. */
-function completedAtOf(db: Database, stored: string | undefined, intentId: string | null): number | null {
-  const value = Number(stored);
-  if (stored !== undefined && Number.isFinite(value)) return value;
-  if (!intentId) return null;
-  if (!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'intents'").get()) return null;
+/**
+ * A completed board's completion time is the last update of its completion intent. Nothing rewrites a concluded
+ * intent until reopen, and reopen ends the completion, so the value is stable and cannot go stale across versions.
+ */
+function completedAtOf(db: Database, status: BoardStatus, intentId: string | null): number | null {
+  if (status !== "completed" || !intentId) return null;
   return db.query<{ updated_at: number }, [string]>("SELECT updated_at FROM intents WHERE id = ?").get(intentId)?.updated_at ?? null;
 }
 
@@ -865,14 +890,14 @@ function infoFrom(db: Database): BoardInfo {
   const meta = new Map(db.query<{ key: string; value: string }, []>("SELECT key, value FROM meta").all().map(r => [r.key, r.value]));
   const reasonWorker = meta.get("reason_worker");
   const completedIntent = meta.get("completed_intent") ?? null;
-  const completedAt = completedAtOf(db, meta.get("completed_at"), completedIntent);
+  const status: BoardStatus = meta.get("status") === "completed" ? "completed" : "active";
   return {
     initialized: meta.has("origin") && meta.has("goal"),
-    status: meta.get("status") === "completed" ? "completed" : "active",
+    status,
     origin: meta.get("origin") ?? null,
     goal: meta.get("goal") ?? null,
     completed_intent: completedIntent,
-    completed_at: completedAt,
+    completed_at: completedAtOf(db, status, completedIntent),
     created_at: meta.has("created_at") ? Number(meta.get("created_at")) : null,
     reason: reasonWorker
       ? { worker: reasonWorker, heartbeat_at: Number(meta.get("reason_heartbeat_at") ?? 0), created: Number(meta.get("reason_created") ?? 0) }

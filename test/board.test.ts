@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Board, BoardError, listBoards, listProjects, parseIdList, projectDbPath, readSnapshot } from "../src/board";
-import type { Snapshot } from "../src/board";
+import { Board, BoardError, listBoards, listProjects, MAX_NAME, MAX_TEXT, parseIdList, projectDbPath, readSnapshot } from "../src/board";
 import type { BoardOptions, Snapshot } from "../src/board";
 import redactOutput from "../src/redact-output";
 import { redactText } from "../src/redact";
@@ -315,14 +315,7 @@ describe("completion", () => {
     expect(done.to_fact_id).toBe("goal");
     expect(done.from).toEqual([fact.id]);
     expect(board.info().status).toBe("completed");
-    expect(board.info().completed_at).toBeTypeOf("number");
-    // The meta row is the source; the completion intent's updated_at is only the fallback for older boards.
-    const raw = new Database(board.path);
-    const persisted = raw.query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'completed_at'").get()?.value;
-    raw.query("UPDATE intents SET updated_at = updated_at + 60000 WHERE id = ?").run(done.id);
-    raw.close();
-    expect(board.info().completed_at).toBe(Number(persisted));
-    expect(board.info().completed_at).not.toBe(done.updated_at + 60_000);
+    expect(board.info().completed_at).toBe(done.updated_at);
     expectRule(() => board.claimFact({ text: "late" }), "board is completed");
     expectRule(() => board.reasonClaim("controller"), "board is completed");
 
@@ -334,17 +327,24 @@ describe("completion", () => {
     expect(board.reasonClaim("controller").worker).toBe("controller");
   });
 
-  test("the completion time falls back to the completion intent for boards completed before it was stored", () => {
-    const { board } = started();
-    const fact = board.claimFact({ text: "proof" });
-    const done = board.complete({ from: [fact.id], description: "done", worker: "w" }).intent;
-    // Erase the stored timestamp the way a board written by an older version lacks it.
+  test("the completion time is the completion intent's, so an older version reopening and completing again cannot leave a stale time", () => {
+    const clock = 2_000;
+    const board = newBoard({ now: () => clock });
+    board.init({ origin: "o", goal: "g" });
+    board.complete({ from: ["origin"], description: "first", worker: "w" });
     const raw = new Database(board.path);
-    raw.exec("DELETE FROM meta WHERE key = 'completed_at'");
+    // 0.7.0 to 0.7.2 also stored the time in meta; an older version's reopen and complete leave that row behind.
+    raw.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('completed_at', '2000')");
+    // Reopen as an older version does: the board is active and the completion intent is detached.
+    raw.exec("UPDATE meta SET value = 'active' WHERE key = 'status'; DELETE FROM meta WHERE key = 'completed_intent'");
+    // A fresh connection is the path the viewer takes.
+    expect((readSnapshot(board.path) as Snapshot).board.completed_at).toBeNull();
+    // Complete again as an older version does: a new completion intent and no new meta row.
+    const again = crypto.randomUUID();
+    raw.query("INSERT INTO intents (id, description, status, created_by, claimed_by, to_fact_id, created_at, updated_at) VALUES (?, 'second', 'concluded', 'w', 'w', 'goal', 9000, 9000)").run(again);
+    raw.query("INSERT OR REPLACE INTO meta (key, value) VALUES ('completed_intent', ?), ('status', 'completed')").run(again);
     raw.close();
-    // Read through a fresh connection, the path the viewer takes.
-    const snapshot = readSnapshot(board.path) as Snapshot;
-    expect(snapshot.board.completed_at).toBe(done.updated_at);
+    expect((readSnapshot(board.path) as Snapshot).board.completed_at).toBe(9_000);
   });
 
   test("the timeline marks disputed facts and tells completion and reopen apart", () => {
@@ -503,6 +503,14 @@ describe("projects", () => {
   test.each(["../escape", "a/b", "a\\b", ".hidden", "x".repeat(65)])("rejects unsafe project name %p", name => {
     expectRule(() => projectDbPath("/tmp/fact-board.db", name), "invalid project name");
   });
+
+  test.each(["con", "NUL", "aux.db", "COM1", "lpt9.log", "Prn"])("rejects the Windows device name %p", name => {
+    expectRule(() => projectDbPath("/tmp/fact-board.db", name), "invalid project name");
+  });
+
+  test.each(["console", "com10", "nullable", "aux2", "lpt"])("accepts a name that only starts like a device name: %p", name => {
+    expect(projectDbPath("/tmp/fact-board.db", name)).toContain(name);
+  });
 });
 
 describe("storage", () => {
@@ -594,6 +602,10 @@ describe("redaction", () => {
   const githubToken = `${"ghp"}_${"a".repeat(36)}`;
   const dashes = "-----";
   const pem = [`${dashes}BEGIN RSA PRIVATE KEY${dashes}`, "MIIabc", `${dashes}END RSA PRIVATE KEY${dashes}`].join("\n");
+  const jwt = [`${"eyJ"}hbGciOiJIUzI1NiJ9`, `${"eyJ"}zdWIiOiIxMjM0NTY3ODkwIn0`, "dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk"].join(".");
+  const googleKey = `${"AIza"}Sy${"A".repeat(33)}`;
+  const gitlabToken = `${"glpat"}-${"x".repeat(20)}`;
+  const npmToken = `${"npm"}_${"A".repeat(36)}`;
 
   test.each([
     ["password assignment", "password=hunter2secret", "password=[REDACTED]"],
@@ -606,6 +618,19 @@ describe("redaction", () => {
     ["github token", `pushed with ${githubToken}`, "pushed with [REDACTED]"],
     ["pem block", `before\n${pem}\nafter`, "before\n[REDACTED PRIVATE KEY]\nafter"],
     ["two pem blocks", `${pem}\nmid\n${pem}`, "[REDACTED PRIVATE KEY]\nmid\n[REDACTED PRIVATE KEY]"],
+    ["connection string password", `postgres://admin:${"s3cret".repeat(2)}@db.internal:5432/app`, "postgres://admin:[REDACTED]@db.internal:5432/app"],
+    ["basic auth header", `Authorization: Basic ${btoa("admin:correcthorse")}`, "Authorization: Basic [REDACTED]"],
+    ["cookie header", `Cookie: sessionid=${"ab12".repeat(6)}; theme=dark`, "Cookie: [REDACTED]"],
+    ["set-cookie header", `Set-Cookie: sid=${"ab12".repeat(6)}; HttpOnly`, "Set-Cookie: [REDACTED]"],
+    ["jwt", `id=${jwt}`, "id=[REDACTED]"],
+    ["google api key", `used ${googleKey} today`, "used [REDACTED] today"],
+    ["gitlab token", `pushed with ${gitlabToken}`, "pushed with [REDACTED]"],
+    ["npm token", `publish with ${npmToken}`, "publish with [REDACTED]"],
+    ["connection string with an empty user", `redis://:${"s3cret".repeat(2)}@cache.internal:6379/0`, "redis://:[REDACTED]@cache.internal:6379/0"],
+    ["connection string password containing @", `postgres://admin:${"p@ss".repeat(2)}@db.internal/app`, "postgres://admin:[REDACTED]@db.internal/app"],
+    ["authorization with another scheme", `Authorization: Negotiate ${"YII".repeat(8)}`, "Authorization: Negotiate [REDACTED]"],
+    ["authorization with an api key scheme", `Authorization: ApiKey ${"k".repeat(20)}`, "Authorization: ApiKey [REDACTED]"],
+    ["a cookie header longer than 4 KB", `Cookie: ${"a=b; ".repeat(2000)}`, "Cookie: [REDACTED]"],
   ])("masks: %s", (_name, input, expected) => {
     expect(redactText(input)).toBe(expected);
   });
@@ -646,6 +671,12 @@ describe("redaction", () => {
     ["short values are left alone", "password=short"],
     ["prose mentioning Bearer", "the Bearer scheme is documented"],
     ["PWD environment paths", "pwd=/home/user/project/dir"],
+    ["a URL without credentials", "see https://example.com:8080/docs and ssh://git@github.com/repo"],
+    ["a port in a URL", "http://localhost:3000/api"],
+    ["prose starting with Basic", "Basic configuration steps are in the README"],
+    ["cookie prose without a value", "the Cookie policy is documented"],
+    ["prose about Authorization", "Authorization header is checked on every request"],
+    ["a URL with a port and a path", "see redis://cache.internal:6379/0 for the cache"],
   ])("leaves ordinary text alone: %s", (_name, input) => {
     expect(redactText(input)).toBe(input);
   });
@@ -661,6 +692,59 @@ describe("redaction", () => {
     const started = performance.now();
     expect(redactText(`${input} password=hunter2secret`)).toBe(`${input} password=[REDACTED]`);
     expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  // These shapes are redacted themselves, so only the time is asserted: every rule is length-bounded.
+  test.each([
+    ["repeated URL schemes", "a://b:".repeat(30_000)],
+    ["repeated Authorization headers", "Authorization: ".repeat(14_000)],
+    ["repeated Cookie headers", "Cookie:".repeat(30_000)],
+    ["a long run of JWT-like segments", "eyJaaaaaaaa.".repeat(20_000)],
+  ])("the added rules stay linear on pathological input: %s", (_name, input) => {
+    const started = performance.now();
+    redactText(input);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  test.each([
+    ["connection strings with no closing @", `${"a://:"}${"b".repeat(100)}`.repeat(2000)],
+    ["repeated Authorization schemes", "Authorization: ab ".repeat(12_000)],
+    ["one very long Cookie line", `Cookie: ${"a=b; ".repeat(60_000)}`],
+  ])("the connection-string, Authorization and Cookie rules stay linear on pathological input: %s", (_name, input) => {
+    const started = performance.now();
+    redactText(input);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
+
+describe("limits", () => {
+  test("free text over the limit is refused as too_long and stores nothing", () => {
+    const { board, reason_token } = started();
+    const tooLong = "x".repeat(MAX_TEXT + 1);
+    expectRule(() => board.claimFact({ text: tooLong }), `the limit is ${MAX_TEXT}`);
+    expectRule(() => board.claimFact({ text: "ok", evidence: tooLong }), "evidence is");
+    expectRule(() => board.writeHint(tooLong), "content is");
+    expectRule(() => board.createIntent({ description: tooLong, from: ["origin"], reasonToken: reason_token }), "description is");
+    expectRule(() => board.reasonClaim("w".repeat(MAX_NAME + 1)), "worker is");
+    expect(board.queryFacts()).toHaveLength(0);
+    expect(board.queryHints()).toHaveLength(0);
+    try {
+      board.writeHint(tooLong);
+    } catch (err) {
+      expect((err as BoardError).code).toBe("too_long");
+    }
+    // The limit itself is allowed.
+    expect(board.claimFact({ text: "y".repeat(MAX_TEXT) }).text).toHaveLength(MAX_TEXT);
+  });
+
+  test("repeated disputes cannot grow one fact's evidence without limit", () => {
+    const { board } = started();
+    const fact = board.claimFact({ text: "contested" });
+    const reason = "r".repeat(MAX_TEXT - 100);
+    board.disputeFact(fact.id, reason);
+    board.disputeFact(fact.id, reason);
+    expectRule(() => board.disputeFact(fact.id, reason), "evidence is");
+    expect(board.getFact(fact.id)?.evidence?.length).toBeLessThanOrEqual(2 * MAX_TEXT);
   });
 });
 
@@ -765,6 +849,28 @@ describe("viewer", () => {
       expect(data.projects).toEqual([
         expect.objectContaining({ name: "", status: "completed", completed_at: 5_000 }),
       ]);
+    } finally {
+      viewer.stop();
+    }
+  });
+
+  test("serves the page under a CSP that allows only its own script, and marks responses nosniff", async () => {
+    const base = join(tempDir(), "fact-board.db");
+    newBoard({}, base).init({ origin: "o", goal: "g" });
+    const viewer = startViewer({ basePath: base, port: 0 });
+    try {
+      const page = await fetch(viewer.url);
+      const html = await page.text();
+      const script = html.slice(html.indexOf("<script>") + "<script>".length, html.lastIndexOf("</script>"));
+      const hash = createHash("sha256").update(script).digest("base64");
+      const csp = page.headers.get("content-security-policy") ?? "";
+      // A hash that does not match the inline script silently stops the whole page from running.
+      expect(csp).toContain(`script-src 'sha256-${hash}'`);
+      expect(csp).toContain("default-src 'none'");
+      expect(csp).toContain("connect-src 'self'");
+      expect(csp).not.toContain("script-src 'unsafe-inline'");
+      const api = await fetch(`${viewer.url}/api/board`);
+      expect([page.headers.get("x-content-type-options"), api.headers.get("x-content-type-options")]).toEqual(["nosniff", "nosniff"]);
     } finally {
       viewer.stop();
     }

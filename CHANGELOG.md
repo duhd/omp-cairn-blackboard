@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.0 — 2026-11-10
+
+### Added
+
+- **Board Picker with Columns**: the viewer's native board select is replaced by a combobox whose list has a **Board** and a **Completed** column. Boards are grouped Active and Completed; each completed board shows how long ago it finished (`3d ago`, `1w ago`, `1mo ago`, `1y ago`) in right-aligned tabular numerals, with the exact date as its tooltip, newest completion first. It works from the keyboard (Enter, Space or the arrow keys open it; ↑/↓, Home, End, type-ahead, Enter and Esc), follows the ARIA combobox and listbox pattern, keeps its highlight when the list is rebuilt while open, and uses 44 px rows on narrow screens. The page keeps its existing tokens and adds one overlay shadow token.
+- **Text Limits**: free text longer than 16 000 characters (`MAX_TEXT`) and worker or author labels longer than 200 (`MAX_NAME`) are refused with the error code `too_long` instead of stored, so one agent cannot make every export and viewer poll heavy. A fact's evidence, including the reasons `fact_dispute` appends, may total at most twice the text limit.
+- **Viewer Security Headers**: the page is served under a Content-Security-Policy that allows only its own inline script (by a sha256 computed from the page), no other origin and no framing, plus `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`; `/api/board` sends the same two headers.
+- **Wider Credential Redaction**: new rules for the `user:password@` part of a connection string (an empty user as in `redis://:pw@host`, and a raw `@` in the password, included), `Authorization:` values with any scheme, `Cookie:` and `Set-Cookie:` header values, JWTs, and Google (`AIza`), GitLab (`glpat-`) and npm (`npm_`) tokens. Every rule is length-bounded, and tests assert linear time on pathological input.
+
+### Changed
+
+- Project names may not be Windows device names (`con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`, with or without an extension). A board file already stored under such a name is no longer listed.
+- The viewer page cannot be embedded in a frame (`frame-ancestors 'none'`).
+- `completed_at` is derived from the completion intent only, and only while the board is completed. `board_complete` no longer writes a `completed_at` row to `meta`, and rows left behind by 0.7.0 to 0.7.2 are ignored.
+
+### Fixed
+
+- A board reopened and completed again by an older version kept the time of its first completion, and a reopened (active) board still reported one. The time now follows the current completion intent.
+- `fact_dispute` could grow one fact's evidence without limit by appending on every call.
+- The 4096-character cap on `Cookie` redaction left the tail of a longer header visible, and an `Authorization` scheme of eight or more characters (`Negotiate`) was redacted instead of the credential after it.
+
+Extensions load only at process start: quit omp fully to pick up this change.
+
 ## 0.7.2 — 2026-11-10
 
 ### Fixed

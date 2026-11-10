@@ -89,6 +89,7 @@ const PAGE = `<!doctype html>
   --r-pill:999px;
   --dur:150ms;
   --ease:cubic-bezier(0.25,1,0.5,1);
+  --shadow-pop:0 8px 24px oklch(0.24 0.02 265 / 0.14);
 }
 @media(prefers-color-scheme:dark){
   :root{
@@ -106,6 +107,7 @@ const PAGE = `<!doctype html>
     --warn:oklch(0.81 0.13 75);
     --bad:oklch(0.73 0.16 25);
     --focus:oklch(0.80 0.13 268);
+    --shadow-pop:0 8px 24px oklch(0 0 0 / 0.5);
   }
 }
 *{box-sizing:border-box}
@@ -127,7 +129,27 @@ button{font:inherit;color:inherit}
 button.control:hover{background:var(--surface-2);border-color:var(--border-2)}
 button.control:active{transform:translateY(1px)}
 button.control[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent)}
-select.control{cursor:pointer;max-width:220px}
+.picker{display:inline-flex;align-items:center;gap:8px;min-width:150px;max-width:240px;text-align:left}
+.picker .pick-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pick-age{font:11px/1 var(--font-mono);font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.pick-caret{width:12px;height:12px;flex:none;color:var(--faint);fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur) var(--ease)}
+.picker[aria-expanded=true] .pick-caret{transform:rotate(180deg)}
+.pick-dot{width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none}
+.pick-dot.completed{background:var(--faint)}
+.pick-dot.legacy{background:var(--warn)}
+.pick-pop{position:fixed;z-index:40;display:flex;flex-direction:column;width:max-content;max-width:calc(100vw - 16px);border:1px solid var(--border-2);border-radius:var(--r);background:var(--surface);box-shadow:var(--shadow-pop);overflow:hidden}
+.pick-head,.pick-opt{display:grid;grid-template-columns:6px minmax(0,1fr) 5.5rem;align-items:center;gap:10px;padding:0 12px}
+.pick-head{height:28px;border-bottom:1px solid var(--border);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pick-head span:first-child{grid-column:2}
+.pick-head span:last-child{grid-column:3}
+.pick-head span:last-child,.pick-opt .pick-age{text-align:right}
+#boardList{position:relative;overflow:auto;padding:4px 0}
+.pick-group{padding:8px 12px 4px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pick-group b{font-weight:500;color:var(--faint)}
+.pick-opt{min-height:32px;font-size:12px;cursor:pointer}
+.pick-opt:hover{background:var(--surface-2)}
+.pick-opt[aria-selected=true]{background:var(--accent-soft);box-shadow:inset 2px 0 0 var(--accent);font-weight:600}
+.pick-opt.active{outline:2px solid var(--focus);outline-offset:-2px}
 .check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap}
 .check input{width:14px;height:14px;margin:0;accent-color:var(--accent)}
 .search{position:relative;display:flex;align-items:center;flex:1 1 200px;max-width:340px;min-width:170px}
@@ -237,13 +259,15 @@ main{padding:24px 24px 64px;max-width:1440px;margin:0 auto}
 @media(max-width:760px){
   .topbar{position:static;padding:10px 16px;gap:8px 12px}
   .field .label{display:none}
-  select.control{max-width:none}
+  .field{flex:1 1 160px}
+  .picker{flex:1 1 auto;max-width:none;min-height:44px}
   .subnav{padding:10px 16px}
   main{padding:16px 16px 48px}
   .overview{padding:14px 16px}
   .overview-grid{grid-template-columns:minmax(0,1fr);gap:16px}
   .search{max-width:none;flex-basis:100%;order:10}
-  .search input,.control,select.control{font-size:16px;height:38px}
+  .search input,.control{font-size:16px;height:38px}
+  .pick-opt{min-height:44px;font-size:14px}
   .wchip{height:28px}
 }
 @media(prefers-reduced-motion:reduce){
@@ -257,7 +281,17 @@ main{padding:24px 24px 64px;max-width:1440px;margin:0 auto}
   </span>
   <span class="conn" aria-live="polite"><i id="dot" class="dot"></i><span id="connText">live</span></span>
   <span class="spacer"></span>
-  <label class="field"><span class="label">Board</span><select id="project" class="control" aria-label="Board"></select></label>
+  <span class="field">
+    <span class="label" id="boardLabel">Board</span>
+    <button id="project" class="control picker" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="boardList" aria-labelledby="boardLabel">
+      <i id="pickDot" class="pick-dot"></i><span id="pickName" class="pick-name"></span><span id="pickAge" class="pick-age"></span>
+      <svg class="pick-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div id="boardPop" class="pick-pop" hidden>
+      <div class="pick-head" aria-hidden="true"><span>Board</span><span>Completed</span></div>
+      <div id="boardList" role="listbox" aria-labelledby="boardLabel" tabindex="-1"></div>
+    </div>
+  </span>
   <label class="check"><input id="showDone" type="checkbox"><span>Show completed</span></label>
   <label class="search">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
@@ -655,32 +689,120 @@ function render() {
   meta.textContent = (partial ? "partial view (newest " + d.limit + ") · " : "") + (d.dbPath || "") + " · updated " + new Date(d.now).toLocaleTimeString();
   meta.title = d.dbPath || "";
 }
+var pick = { rows: [], key: "", open: false, active: -1, activeName: null, buf: "", timer: 0 };
+var pickBtn = document.getElementById("project"), pickPop = document.getElementById("boardPop"), pickList = document.getElementById("boardList");
 function renderProjects(d) {
-  var sel = document.getElementById("project");
   // Completed boards are hidden by default: they are history, not work in progress. The selected one always stays,
   // so a URL pointing at a completed board still works with the toggle off.
   var shown = (d.projects || []).filter(function (p) { return state.showDone || p.status !== "completed" || p.name === state.project; });
   var rows = shown.map(function (p) {
-    var label = p.name || "(default)";
-    if (p.status === "completed") label += " · " + (p.completed_at ? whenAgo(p.completed_at, d.now) : "completed");
-    return { name: p.name, group: p.status === "completed" ? "Completed" : "Active", label: label };
+    var done = p.status === "completed";
+    return {
+      name: p.name, text: p.name || "(default)", status: p.status, done: done,
+      age: done ? (p.completed_at ? whenAgo(p.completed_at, d.now) : "completed") : "",
+      at: done && p.completed_at ? new Date(p.completed_at).toLocaleString() : ""
+    };
   });
-  // The completion age changes while the page is open, so the rebuilt key is the text actually shown.
-  var key = state.showDone + "#" + rows.map(function (r) { return r.group + ":" + r.name + ":" + r.label; }).join("|");
-  if (sel.dataset.names === key && sel.value === state.project) return;
-  // Replacing the options would close a picker the reader has open; wait for the next poll after it loses focus.
-  if (sel === document.activeElement) return;
-  sel.replaceChildren();
-  ["Active", "Completed"].forEach(function (group) {
-    var items = rows.filter(function (r) { return r.group === group; });
+  // Active boards first, then completed (the payload is already in that order), so the list index is the DOM order.
+  pick.rows = rows.filter(function (r) { return !r.done; }).concat(rows.filter(function (r) { return r.done; }));
+  pick.rows.forEach(function (r, i) { r.i = i; });
+  var cur = pick.rows.filter(function (r) { return r.name === state.project; })[0];
+  document.getElementById("pickDot").className = "pick-dot " + (cur ? cur.status : "active");
+  document.getElementById("pickName").textContent = cur ? cur.text : (state.project || "(default)");
+  document.getElementById("pickAge").textContent = cur && cur.done ? cur.age : "";
+  pickBtn.title = cur && cur.at ? "Completed " + cur.at : "";
+  // The completion age changes while the page is open, so the rebuild key is the text actually shown.
+  var key = state.showDone + "#" + state.project + "#" + pick.rows.map(function (r) { return r.status + ":" + r.name + ":" + r.age; }).join("|");
+  if (pick.key === key) return;
+  pick.key = key;
+  pickList.replaceChildren();
+  [["Active", false], ["Completed", true]].forEach(function (g) {
+    var items = pick.rows.filter(function (r) { return r.done === g[1]; });
     if (!items.length) return;
-    var og = document.createElement("optgroup"); og.label = group;
-    items.forEach(function (r) { var o = el("option", "", r.label); o.value = r.name; og.appendChild(o); });
-    sel.appendChild(og);
+    var grp = el("div"); grp.setAttribute("role", "group"); grp.setAttribute("aria-label", g[0]);
+    var head = el("div", "pick-group", g[0] + " "); head.setAttribute("aria-hidden", "true"); head.appendChild(el("b", "", String(items.length)));
+    grp.appendChild(head);
+    items.forEach(function (r) {
+      var o = el("div", "pick-opt"); o.id = "pick-" + r.i; o.setAttribute("role", "option"); o.setAttribute("data-i", String(r.i));
+      o.setAttribute("aria-selected", String(r.name === state.project));
+      o.setAttribute("aria-label", r.text + (r.done ? ", completed" + (r.at ? " " + r.at : "") : ", " + r.status));
+      o.appendChild(el("i", "pick-dot " + r.status));
+      o.appendChild(el("span", "pick-name", r.text));
+      var age = el("span", "pick-age" + (r.done ? "" : " none"), r.done ? r.age : "\u2014");
+      if (r.at) age.title = r.at;
+      o.appendChild(age);
+      grp.appendChild(o);
+    });
+    pickList.appendChild(grp);
   });
-  // Every board hidden (a completed default board with Show completed off) must still leave the control usable.
-  if (!sel.children.length) { var blank = el("option", "", "(default)"); blank.value = ""; sel.appendChild(blank); }
-  sel.value = state.project; sel.dataset.names = key;
+  // A rebuild while the list is open keeps the highlighted board by name.
+  if (pick.open) { var ai = pick.rows.findIndex(function (r) { return r.name === pick.activeName; }); setActive(ai < 0 ? 0 : ai); }
+}
+function setActive(i) {
+  var prev = pickList.querySelector(".pick-opt.active"); if (prev) prev.classList.remove("active");
+  var r = pick.rows[i];
+  if (!r) { pick.active = -1; pickBtn.removeAttribute("aria-activedescendant"); return; }
+  pick.active = i; pick.activeName = r.name;
+  var o = document.getElementById("pick-" + i); o.classList.add("active");
+  pickBtn.setAttribute("aria-activedescendant", o.id);
+  // Scroll the list itself: scrollIntoView would also scroll the page, which closes the picker.
+  if (o.offsetTop < pickList.scrollTop) pickList.scrollTop = o.offsetTop;
+  else if (o.offsetTop + o.offsetHeight > pickList.scrollTop + pickList.clientHeight) pickList.scrollTop = o.offsetTop + o.offsetHeight - pickList.clientHeight;
+}
+function placePick() {
+  var b = pickBtn.getBoundingClientRect(), vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+  pickPop.style.minWidth = Math.min(Math.max(b.width, 300), vw - 16) + "px";
+  var w = pickPop.offsetWidth, top = b.bottom + 6;
+  pickPop.style.left = Math.max(8, Math.min(b.left, vw - w - 8)) + "px";
+  pickPop.style.top = top + "px";
+  pickList.style.maxHeight = Math.max(120, vh - top - 16 - 28) + "px";
+}
+function openPick() {
+  if (pick.open || !pick.rows.length) return;
+  pick.open = true; pickBtn.setAttribute("aria-expanded", "true"); pickPop.hidden = false;
+  placePick();
+  var i = pick.rows.findIndex(function (r) { return r.name === state.project; });
+  setActive(i < 0 ? 0 : i);
+}
+function closePick() {
+  if (!pick.open) return;
+  pick.open = false; pick.buf = "";
+  pickBtn.setAttribute("aria-expanded", "false"); pickBtn.removeAttribute("aria-activedescendant");
+  pickPop.hidden = true;
+}
+function selectBoard(name) {
+  if (name === state.project) return;
+  state.project = name; state.first = true; state.seen = {}; gs.sig = ""; gs.moved = false;
+  syncUrl(); poll();
+  if (state.data) renderProjects(state.data);
+}
+function chooseRow(i) { var r = pick.rows[i]; closePick(); if (r) selectBoard(r.name); }
+function typeAhead(ch) {
+  clearTimeout(pick.timer);
+  pick.buf += ch.toLowerCase();
+  pick.timer = setTimeout(function () { pick.buf = ""; }, 600);
+  var n = pick.rows.length, from = pick.buf.length === 1 ? pick.active + 1 : Math.max(pick.active, 0);
+  for (var k = 0; k < n; k++) {
+    var i = (from + k) % n;
+    if (pick.rows[i].text.toLowerCase().indexOf(pick.buf) === 0) { setActive(i); return; }
+  }
+}
+function onPickKey(ev) {
+  var k = ev.key, n = pick.rows.length;
+  if (!pick.open) {
+    if (k === "ArrowDown" || k === "ArrowUp" || k === "Enter" || k === " ") { ev.preventDefault(); ev.stopPropagation(); openPick(); }
+    return;
+  }
+  if (k === "Tab") { closePick(); return; }
+  // Every key the open list handles must not reach the page-level shortcuts (/ focuses the filter box).
+  ev.stopPropagation();
+  if (k === "ArrowDown") { ev.preventDefault(); setActive(Math.min(pick.active + 1, n - 1)); }
+  else if (k === "ArrowUp") { ev.preventDefault(); setActive(Math.max(pick.active - 1, 0)); }
+  else if (k === "Home") { ev.preventDefault(); setActive(0); }
+  else if (k === "End") { ev.preventDefault(); setActive(n - 1); }
+  else if (k === "Enter" || k === " ") { ev.preventDefault(); chooseRow(pick.active); }
+  else if (k === "Escape") { ev.preventDefault(); closePick(); }
+  else if (k.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) { ev.preventDefault(); typeAhead(k); }
 }
 function syncUrl() {
   var p = new URLSearchParams();
@@ -711,10 +833,16 @@ function poll() {
   fetch(url, { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) { state.data = d; setConn("live"); render(); })
     .catch(function () { setConn("offline"); });
 }
-document.getElementById("project").addEventListener("change", function (e) {
-  state.project = e.target.value; state.first = true; state.seen = {}; gs.sig = ""; gs.moved = false;
-  syncUrl(); poll();
-});
+document.getElementById("pickName").textContent = state.project || "(default)";
+pickBtn.addEventListener("click", function () { if (pick.open) closePick(); else openPick(); });
+pickBtn.addEventListener("keydown", onPickKey);
+pickBtn.addEventListener("blur", closePick);
+// Keep focus on the trigger while the pointer works the list (the combobox keeps DOM focus).
+pickList.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
+pickList.addEventListener("click", function (ev) { var o = ev.target.closest(".pick-opt"); if (o) chooseRow(Number(o.getAttribute("data-i"))); });
+document.addEventListener("pointerdown", function (ev) { if (pick.open && !pickBtn.contains(ev.target) && !pickPop.contains(ev.target)) closePick(); });
+window.addEventListener("resize", closePick);
+window.addEventListener("scroll", closePick, { passive: true });
 document.getElementById("tabList").onclick = function () { showTab("list"); };
 document.getElementById("tabGraph").onclick = function () { showTab("graph"); };
 document.getElementById("fit").onclick = function () { fit(); };
@@ -740,6 +868,21 @@ showTab(state.view);
 poll(); setInterval(poll, 2000);
 </script></body></html>`;
 
+// The page is one inline script. The CSP allows exactly that script by hash, so injected markup cannot run, and
+// nothing loads from or connects to another origin. The hash is computed from PAGE, so it cannot drift from it.
+const PAGE_SCRIPT = PAGE.slice(PAGE.indexOf("<script>") + "<script>".length, PAGE.lastIndexOf("</script>"));
+const PAGE_CSP = [
+  "default-src 'none'",
+  `script-src 'sha256-${new Bun.CryptoHasher("sha256").update(PAGE_SCRIPT).digest("base64")}'`,
+  "style-src 'unsafe-inline'",
+  "img-src data:",
+  "connect-src 'self'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join("; ");
+const HARDENING = { "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" };
+
 export function startViewer(options: { basePath: string; port?: number }): ViewerHandle {
   let boundPort = 0;
   const server = Bun.serve({
@@ -754,9 +897,9 @@ export function startViewer(options: { basePath: string; port?: number }): Viewe
       const url = new URL(req.url);
       if (url.pathname === "/api/board") {
         const payload = boardPayload(options.basePath, url.searchParams.get("project"));
-        return Response.json(payload, { headers: { "cache-control": "no-store" } });
+        return Response.json(payload, { headers: { "cache-control": "no-store", ...HARDENING } });
       }
-      if (url.pathname === "/") return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
+      if (url.pathname === "/") return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": PAGE_CSP, ...HARDENING } });
       return new Response("not found", { status: 404 });
     },
   });

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`omp-cairn-blackboard` is an omp (oh-my-pi) plugin, v0.7.0, MIT, with **zero dependencies**. It gives parallel `task` subagents a shared, persistent **fact–intent graph** (a "blackboard") to coordinate through, in place of messaging each other. The idea comes from Cairn: *state is the single source of truth, decisions are distributed to workers*. None of Cairn's code is used.
+`omp-cairn-blackboard` is an omp (oh-my-pi) plugin, v0.8.0, MIT, with **zero dependencies**. It gives parallel `task` subagents a shared, persistent **fact–intent graph** (a "blackboard") to coordinate through, in place of messaging each other. The idea comes from Cairn: *state is the single source of truth, decisions are distributed to workers*. None of Cairn's code is used.
 
 The package ships these pieces:
 - A 17-tool extension: `src/index.ts`
@@ -62,7 +62,7 @@ omp plugin features omp-cairn-blackboard --enable=redact-output
 
 ## Code Conventions & Common Patterns
 
-- **Error handling:** rule violations throw `BoardError(message, { code?, details? })`. `run()` in `index.ts` turns them into `{ error, code?, ...details }`, and any other error rethrows. Codes in use: `reason_held`, `intent_claimed`, `invalid_transition`, `lease_lost`, `not_found`, `board_completed`, `ambiguous_id`. Many rules (not initialized, cap, bad source…) still have no code, so callers must handle both shapes. When you add a rule, give it a `code`.
+- **Error handling:** rule violations throw `BoardError(message, { code?, details? })`. `run()` in `index.ts` turns them into `{ error, code?, ...details }`, and any other error rethrows. Codes in use: `reason_held`, `intent_claimed`, `invalid_transition`, `lease_lost`, `not_found`, `board_completed`, `ambiguous_id`, `too_long`. Many rules (not initialized, cap, bad source…) still have no code, so callers must handle both shapes. When you add a rule, give it a `code`.
 - **Typing:** no `any`. Use `unknown` plus type guards (see `isTextChunk`). Static lookups are `Record<string, true>`, not `Set`.
 - **Tool params:** wire params are snake_case (`claimed_by`, `reason_token`, `lease_token`) and TS method args are camelCase. `from` is a **string** (comma-separated or a JSON-array string) parsed by `parseIdList` (optional in `intent_create`, defaulting to `"origin"`); passing a real array fails validation. Aliases are accepted for key parameters (`content`/`text`/`hint` in `hint_write`, `reason`/`why` in `board_reopen`, `fact`/`result` in `intent_conclude`).
 - **Zod subset known to load on the host:** `z.object/string/number`, `.optional/.describe/.int/.positive/.max`. `.array()`/`.min()` were removed because they are unverified against the omptype shim. Re-verify before adding new zod methods.
@@ -115,7 +115,8 @@ omp plugin features omp-cairn-blackboard --enable=redact-output
 ## Security Invariants (do not regress)
 
 - **The board is not a safe place for credentials.** Redaction is best-effort regex only (`src/redact.ts`), applied before storage, and it will miss arbitrary secrets. Findings are stored as plain text in a file shared by every project that uses the same agent dir.
-- **The viewer stays read-only and local:** read-only DB connection, bound to `127.0.0.1`, GET/HEAD only, strict `Host` check, and lease tokens never selected. Board text comes from agents, so it is rendered with `textContent` only.
+- **The viewer stays read-only and local:** read-only DB connection, bound to `127.0.0.1`, GET/HEAD only, strict `Host` check, and lease tokens never selected. Board text comes from agents, so it is rendered with `textContent` only. The page is served under a CSP (`default-src 'none'`, the single inline script allowed by a sha256 computed from `PAGE` at startup, same-origin `connect-src`) plus `nosniff` and `no-referrer`. Because the hash comes from `PAGE`, editing the script needs no CSP change; never add a second inline script or an external asset.
+- **Free text is bounded:** `MAX_TEXT` (16 000) and `MAX_NAME` (200) in `board.ts`, error code `too_long`. A fact's evidence may total `2 * MAX_TEXT` including appended dispute reasons, so anything that appends to a stored row must cap the total, not only each call. Route new free-text fields through `stored()` and new worker/author labels through `limited()`. `PROJECT_NAME` rejects Windows device names (`con`, `nul`, `com1`, …).
 - **Never log or return `lease_token`/`reason_token` anywhere except the claiming tool's own result.**
 
 ## Known Doc/Code Gaps (fix in code or docs, don't rely on the docs)

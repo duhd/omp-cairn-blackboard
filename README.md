@@ -119,7 +119,7 @@ Messages carry only counts, short intent ids and the project name, never board t
 
 The page follows the system light or dark theme, loads nothing from the network, and `/` focuses the filter box.
 
-Use the project picker to switch boards; the URL keeps `project` and `view`. Boards marked `completed` are hidden from that picker by default, and the board named in the URL always stays listed, so a link to a finished board still opens. Toggle **Show completed** beside the picker to show them. The picker groups active and completed boards separately, and each completed board carries its completion time (`· 3d ago`, `· 2w ago`, `· 1mo ago`), newest first; the same time appears next to *Completed via* in the board summary.
+Use the board picker to switch boards; the URL keeps `project` and `view`. Boards marked `completed` are hidden from it by default, and the board named in the URL always stays listed, so a link to a finished board still opens. Toggle **Show completed** beside the picker to show them. The picker opens a list with a **Board** and a **Completed** column: active and completed boards are grouped, each completed board shows how long ago it finished (`3d ago`, `2w ago`, `1mo ago`; the exact date is its tooltip), newest first, and the same age appears next to *Completed via* in the board summary. It works from the keyboard: Enter, Space or the arrow keys open it, ↑/↓, Home and End move, typing jumps to a board, Enter picks, Esc closes.
 
 Outside omp, run the viewer from anywhere (it takes no arguments and reads the boards under `~/.omp/agent`):
 
@@ -131,7 +131,7 @@ The board summary also flags graph health: facts that cite no source and were pr
 
 The viewer reads the newest 500 facts, 500 intents and 500 hints. When older facts or intents exist, both tabs mark the view as **partial**: older nodes, and the edges into them, are not shown. When only hints overflow, just the List tab is marked, since the graph does not draw hints. Use `board_export` for the full graph.
 
-The viewer opens the database read-only, binds to `127.0.0.1` only, answers only GET/HEAD, checks the `Host` header, and renders board text (HTML and SVG) with `textContent` only.
+The viewer opens the database read-only, binds to `127.0.0.1` only, answers only GET/HEAD, checks the `Host` header, and renders board text (HTML and SVG) with `textContent` only. The page is served under a Content-Security-Policy that allows only its own script (by hash) and no other origin, with `nosniff` and `no-referrer`.
 
 ## Configuration
 
@@ -181,7 +181,8 @@ Sequence entries in one `advisors:` list must align. The snippet is indented two
 ### Stored data
 
 - The database is shared by every project that uses the same agent directory, and findings are stored in plain text. For sensitive work set `FACT_BOARD_DB` (or pass `project`) to keep data apart, and keep the file out of backups and sync.
-- Facts, evidence, dispute reasons, intents and hints are passed through best-effort credential redaction **before** they are stored. It is regex-based: it catches common shapes (`password=…`, `nodekey`/`privkey` hex, Ethereum keystore JSON, `passfile`/`passphrase`, `*token` / `*Token` keys, `*_secret`, API keys, `Bearer …`, AWS key ids, common provider tokens, private-key blocks), not arbitrary secrets. Do not treat the board as a safe place for credentials.
+- Facts, evidence, dispute reasons, intents and hints are passed through best-effort credential redaction **before** they are stored. It is regex-based: it catches common shapes (`password=…`, `nodekey`/`privkey` hex, Ethereum keystore JSON, `passfile`/`passphrase`, `*token` / `*Token` keys, `*_secret`, API keys, `Bearer …`, `Authorization:` values with any scheme, `Cookie:` / `Set-Cookie:` header values, the `user:password@` part of a connection string (an empty user and a raw `@` in the password included), JWTs, AWS key ids, common provider tokens (GitHub, GitLab, npm, Slack, Google, `sk-`), private-key blocks), not arbitrary secrets. Do not treat the board as a safe place for credentials.
+- Free text is bounded: a fact, evidence, intent, hint, goal or reason longer than 16 000 characters, or a worker name longer than 200, is refused with a `too_long` error instead of stored. A fact's evidence, including the reasons `fact_dispute` appends to it, may total at most twice that. This stops one agent from making every export and viewer poll heavy. Project names may not be Windows device names (`con`, `nul`, `com1`, …).
 - The `redact-output` feature applies the same rules to command/execution output (`bash`, `eval`) only. Reading or searching files (`read`, `grep`, `glob`, `find`) is not redacted, because rewriting source code corrupts what the agent sees; a file that contains a secret is therefore not masked by this feature. Output of a `bash` command that runs in the background (an async job, or one moved to the background while running) arrives as a job notification rather than a tool result, so it is not redacted either. It is off by default.
 
 ## Concurrency

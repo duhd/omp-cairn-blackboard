@@ -65,9 +65,20 @@ const RULES: ReadonlyArray<readonly [RegExp, string]> = [
     /(?<![A-Za-z0-9_])(?!(?:reason_token|lease_token|reasonToken|leaseToken)\b)([A-Za-z0-9_-]{0,64}token["']?\s*[=:]\s*["']?)[^\s"']{8,}/gi,
     "$1[REDACTED]",
   ],
+  // user:password@ inside a connection string (postgres://, redis://, https://, ...). The user may be empty
+  // (redis://:pw@host) and the password may hold a raw '@': it is greedy up to a '/', then backs off to the last '@'.
+  // Every part is length-bounded.
+  [/(\b[a-z][a-z0-9+.-]{1,20}:\/\/[^\s:@/]{0,64}:)[^\s/]{1,128}(?=@)/gi, "$1[REDACTED]"],
+  // Authorization values other than Bearer (next rule): any `<scheme> <credentials>` pair, or a bare token.
+  [/\b(Authorization["']?\s*[:=]\s*["']?(?:[A-Za-z][A-Za-z0-9-]{1,31}\s+)?)[^\s"']{8,}/gi, "$1[REDACTED]"],
+  // Cookie / Set-Cookie header values, up to the end of the line or the closing quote. Unbounded on purpose:
+  // a match consumes the rest of its line, so matches never overlap and the pass stays linear.
+  [/\b((?:Set-)?Cookie["']?\s*[:=]\s*["']?)[^\r\n"']{8,}/gi, "$1[REDACTED]"],
+  // Signed JWTs (three base64url segments, the first two starting with an encoded `{"`).
+  [/\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[REDACTED]"],
   [/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{10,}/g, "$1[REDACTED]"],
   [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, "[REDACTED]"],
-  [/\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|sk-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,})/g, "[REDACTED]"],
+  [/\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|sk-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|glpat-[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{36})/g, "[REDACTED]"],
 ];
 
 export function redactText(text: string): string {

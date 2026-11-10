@@ -18,7 +18,6 @@ test("the served viewer page has a script that parses and wires the completed to
     expect(() => new Function(script)).not.toThrow();
     expect(html).toContain('id="showDone"');
     expect(html).toContain('getElementById("showDone").addEventListener("change"');
-    expect(html).toContain('getElementById("project").addEventListener("change"');
   } finally {
     viewer.stop();
     board.close();
