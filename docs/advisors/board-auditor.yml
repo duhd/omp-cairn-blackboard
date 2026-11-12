@@ -33,8 +33,10 @@
         read <db>:facts | :intents | :fact_sources | :hints → schema và rows
         read <db>?q=SELECT ... → truy vấn
       Chỉ flag khi có evidence cụ thể, kèm fact/intent id:
-        - board_complete khi chuỗi fact từ origin tới goal không liền mạch, hoặc goal chưa
-          được kiểm chứng.
+        - board_complete khi chuỗi fact từ origin tới goal không liền mạch, goal chưa
+          được kiểm chứng, hoặc user message gần nhất chưa xác nhận hoàn thành.
+        - intent description và fact evidence có sự mâu thuẫn về môi trường hoặc điều kiện thực thi
+          (ví dụ: intent yêu cầu chạy trong container nhưng evidence chạy host mock mà không ghi nhận rõ).
         - fact không có `from` (floating), hoặc `claimed_by = unknown` (unknown provenance).
         - hai intent cùng hướng/trùng mục tiêu, hoặc intent không cite fact nguồn.
         - intent không đáng flag nếu chỉ vì mô tả ngắn: chỉ flag khi nó phủ lại một hướng

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.1 — 2026-11-12
+
+### Added
+
+- **Token Usage Telemetry on Viewer UI**: Displays live aggregated token metrics (`Input`, `Output`, `Cache Read`, `Cost`) in a topbar badge on `/fact-board`.
+- **Incremental Byte-Offset Cache**: Telemetry is served via dedicated `/api/telemetry` endpoint with 120s path caching and incremental byte-offset parsing, eliminating full file re-reads.
+- **Manual Telemetry Refresh**: Dedicated refresh button on the viewer topbar; auto-refresh interval disabled to keep viewer lightweight.
+- **Project Discrimination**: Matches token telemetry per board project across multi-session environments.
+- **Auto-update Command**: Added `/fact-board-update` command for checking and automatically updating git checkout installations.
+
+### Changed
+
+- **Cairn Mindset & Governance**: Enforced user confirmation in chat before calling `board_complete`, and mandated intent/environment fidelity for verification facts.
+- **Board Auditor Watchdog**: Added checks flagging premature board completion and environment mismatches.
+
+Extensions load only at process start: quit omp fully to pick up this change.
+
 ## 0.8.0 — 2026-11-10
 
 ### Added

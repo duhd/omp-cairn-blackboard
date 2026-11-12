@@ -15,7 +15,7 @@ import { dispatchAdvice, projectLeases } from "./dispatch";
 import type { Checkpoint } from "./dispatch";
 import { WRITE_TOOLS, compactionContext, nudgeOnCall, recordToolUse } from "./session-boards";
 import type { NudgeState, SessionBoards } from "./session-boards";
-import { checkForUpdate, installedPlugin, updateCachePath } from "./update-check";
+import { autoUpdateIfAvailable, checkForUpdate, installedPlugin, updateCachePath } from "./update-check";
 import { startViewer } from "./viewer";
 import type { ViewerHandle } from "./viewer";
 
@@ -336,7 +336,8 @@ export default function blackboard(pi: ExtensionAPI): void {
     async execute(_id, params) {
       return run(() => {
         const { intent, unfinished } = boardFor(params.project).complete({ from: parseIdList(params.from), description: params.description, worker: params.worker });
-        return { ...intent, unfinished };
+        const warning = "Note: Call board_complete only after the user has explicitly reviewed and confirmed the goal reached in chat. If further user requests arrive for this task, call board_reopen.";
+        return { ...intent, unfinished, warning };
       });
     },
   });
@@ -418,6 +419,25 @@ export default function blackboard(pi: ExtensionAPI): void {
       } else {
         ctx.ui.notify("usage: /fact-board [start|stop|status]", "warning");
       }
+    },
+  });
+  pi.registerCommand("fact-board-update", {
+    description: "Check and auto-update omp-cairn-blackboard plugin",
+    handler: async (_args, ctx) => {
+      const plugin = installedPlugin();
+      if (!plugin) {
+        ctx.ui.notify("Could not detect installed omp-cairn-blackboard version", "error");
+        return;
+      }
+      ctx.ui.notify("Checking for omp-cairn-blackboard updates...", "info");
+      const auto = await autoUpdateIfAvailable({ ...plugin, cachePath: updateCachePath(resolveDbPath()) });
+      if (auto?.updated) {
+        ctx.ui.notify(auto.message, "info");
+        return;
+      }
+      const msg = await checkForUpdate({ ...plugin, cachePath: updateCachePath(resolveDbPath()) });
+      if (msg) ctx.ui.notify(msg, "info");
+      else ctx.ui.notify(`omp-cairn-blackboard is up to date (${plugin.current})`, "info");
     },
   });
 

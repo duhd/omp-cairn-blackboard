@@ -105,6 +105,26 @@ export async function checkForUpdate(options: UpdateCheckOptions): Promise<strin
         : `run \`omp plugin upgrade ${PLUGIN_NAME}\``;
   return `omp-cairn-blackboard ${cache.latest} is available (installed ${options.current}). To update, ${how}, then quit omp fully and start it again. Changes: ${CHANGELOG_URL}`;
 }
+/**
+ * Automatically executes git pull if in a git-checkout install and updates are available.
+ */
+export async function autoUpdateIfAvailable(options: UpdateCheckOptions): Promise<{ updated: boolean; message: string } | null> {
+  const latest = await fetchLatest(options.fetchImpl ?? fetch);
+  if (!latest) return null;
+  const order = compareVersions(latest, options.current);
+  if (order === null || order <= 0) return null;
+
+  if (options.install.kind === "git-checkout") {
+    try {
+      const proc = Bun.spawn(["git", "pull", "--ff-only"], { cwd: PLUGIN_ROOT });
+      const exitCode = await proc.exited;
+      if (exitCode === 0) {
+        return { updated: true, message: `Auto-updated omp-cairn-blackboard to ${latest} via git pull. Restart omp to apply.` };
+      }
+    } catch {}
+  }
+  return null;
+}
 
 /**
  * How this copy was installed, read from where it sits. A marketplace install lives in a cache directory named

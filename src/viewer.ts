@@ -8,9 +8,137 @@
  * Lease tokens are never selected. Board text comes from agents, so both the HTML list and the SVG graph render
  * it with textContent only, and the page loads nothing from the network.
  */
+import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { listBoards, listProjects, projectDbPath, readSnapshot, resolveDbPath } from "./board";
 import type { BoardSummary } from "./board";
 import { buildGraph } from "./graph";
+
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cost: number;
+}
+
+interface SessionCacheEntry {
+  mtimeMs: number;
+  size: number;
+  offset: number;
+  leftover: string;
+  usage: TokenUsage;
+  projects: Set<string>;
+}
+
+const sessionCache = new Map<string, SessionCacheEntry>();
+const projectSessionPathCache = new Map<string, { paths: string[]; checkedAt: number }>();
+
+/** Fast, incremental read of token usage from sessions using byte-offset parsing. */
+export function aggregateSessionUsage(basePath: string, project: string | null): TokenUsage {
+  const total: TokenUsage = { input: 0, output: 0, cacheRead: 0, cost: 0 };
+  try {
+    const agentDir = dirname(basePath);
+    const sessionsDir = join(agentDir, "sessions");
+    if (!existsSync(sessionsDir)) return total;
+
+    const now = Date.now();
+    const cacheKey = project ?? "";
+    let cachedPaths = projectSessionPathCache.get(cacheKey);
+    let candidates: string[] = [];
+
+    if (cachedPaths && (now - cachedPaths.checkedAt < 120_000)) {
+      candidates = cachedPaths.paths;
+    } else {
+      const subdirs = readdirSync(sessionsDir)
+        .map(d => join(sessionsDir, d))
+        .filter(p => {
+          try { return statSync(p).isDirectory(); } catch { return false; }
+        });
+      for (const sub of subdirs) {
+        try {
+          for (const file of readdirSync(sub)) {
+            if (file.endsWith(".jsonl")) candidates.push(join(sub, file));
+          }
+        } catch {}
+      }
+      candidates.sort((a, b) => {
+        try { return statSync(b).mtimeMs - statSync(a).mtimeMs; } catch { return 0; }
+      });
+      candidates = candidates.slice(0, 10);
+      projectSessionPathCache.set(cacheKey, { paths: candidates, checkedAt: now });
+    }
+
+    for (const file of candidates) {
+      try {
+        const st = statSync(file);
+        let entry = sessionCache.get(file);
+        if (!entry || entry.mtimeMs !== st.mtimeMs || entry.size !== st.size) {
+          const prevUsage: TokenUsage = entry ? { ...entry.usage } : { input: 0, output: 0, cacheRead: 0, cost: 0 };
+          let offset = entry ? entry.offset : 0;
+          let leftover = entry ? entry.leftover : "";
+          const projects = entry ? new Set(entry.projects) : new Set<string>();
+
+          if (st.size < offset) {
+            offset = 0;
+            leftover = "";
+            prevUsage.input = 0;
+            prevUsage.output = 0;
+            prevUsage.cacheRead = 0;
+            prevUsage.cost = 0;
+            projects.clear();
+          }
+
+          const toRead = st.size - offset;
+          if (toRead > 0) {
+            const buf = Buffer.alloc(toRead);
+            const fd = openSync(file, "r");
+            try {
+              readSync(fd, buf, 0, toRead, offset);
+            } finally {
+              closeSync(fd);
+            }
+            offset = st.size;
+            const text = leftover + buf.toString("utf-8");
+            const lines = text.split("\n");
+            leftover = lines.pop() ?? "";
+
+            for (const line of lines) {
+              if (line.includes('"project"')) {
+                const pm = /"project"\s*:\s*"([^"]+)"/.exec(line);
+                if (pm) projects.add(pm[1]);
+              }
+              if (!line.includes('"usage"') && !line.includes('"totalTokens"')) continue;
+              try {
+                const parsed = JSON.parse(line);
+                const u = parsed.message?.usage ?? parsed.usage;
+                if (u && typeof u === "object") {
+                  prevUsage.input += Number(u.input ?? 0);
+                  prevUsage.output += Number(u.output ?? 0);
+                  prevUsage.cacheRead += Number(u.cacheRead ?? 0);
+                  const c = u.cost;
+                  if (typeof c === "number") prevUsage.cost += c;
+                  else if (c && typeof c === "object" && typeof c.total === "number") prevUsage.cost += c.total;
+                }
+              } catch {}
+            }
+          }
+          entry = { mtimeMs: st.mtimeMs, size: st.size, offset, leftover, usage: prevUsage, projects };
+          sessionCache.set(file, entry);
+        }
+
+        const isMatch = !project || entry.projects.has(project);
+        if (isMatch) {
+          total.input += entry.usage.input;
+          total.output += entry.usage.output;
+          total.cacheRead += entry.usage.cacheRead;
+          total.cost += entry.usage.cost;
+          if (entry.usage.input > 0) break;
+        }
+      } catch {}
+    }
+  } catch {}
+  return total;
+}
 
 export interface ViewerHandle {
   url: string;
@@ -122,6 +250,12 @@ button{font:inherit;color:inherit}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none}
 .dot.off{background:var(--bad)}
 .dot.paused{background:var(--faint)}
+.token-badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--surface);font-size:11px;font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.token-badge b{color:var(--fg);font-weight:600}
+.token-badge .cost{color:var(--ok);font-weight:600}
+.token-refresh{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:4px;padding:0;border:0;background:transparent;color:var(--faint);cursor:pointer;border-radius:4px;transition:color var(--dur) var(--ease),background var(--dur) var(--ease)}
+.token-refresh:hover{color:var(--fg);background:var(--surface-2)}
+.token-refresh svg{width:12px;height:12px}
 .spacer{flex:1 1 auto}
 .field{display:inline-flex;align-items:center;gap:6px;min-width:0}
 .label{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
@@ -280,6 +414,12 @@ main{padding:24px 24px 64px;max-width:1440px;margin:0 auto}
     Fact board
   </span>
   <span class="conn" aria-live="polite"><i id="dot" class="dot"></i><span id="connText">live</span></span>
+  <span id="tokenBadge" class="token-badge" hidden>
+    <span id="tokenText"></span>
+    <button id="tokenRefresh" class="token-refresh" type="button" title="Refresh token telemetry" aria-label="Refresh token telemetry">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+    </button>
+  </span>
   <span class="spacer"></span>
   <span class="field">
     <span class="label" id="boardLabel">Board</span>
@@ -688,6 +828,7 @@ function render() {
   var meta = document.getElementById("meta");
   meta.textContent = (partial ? "partial view (newest " + d.limit + ") · " : "") + (d.dbPath || "") + " · updated " + new Date(d.now).toLocaleTimeString();
   meta.title = d.dbPath || "";
+  // Token telemetry is handled independently via pollTelemetry
 }
 var pick = { rows: [], key: "", open: false, active: -1, activeName: null, buf: "", timer: 0 };
 var pickBtn = document.getElementById("project"), pickPop = document.getElementById("boardPop"), pickList = document.getElementById("boardList");
@@ -773,7 +914,7 @@ function closePick() {
 function selectBoard(name) {
   if (name === state.project) return;
   state.project = name; state.first = true; state.seen = {}; gs.sig = ""; gs.moved = false;
-  syncUrl(); poll();
+  syncUrl(); poll(); pollTelemetry();
   if (state.data) renderProjects(state.data);
 }
 function chooseRow(i) { var r = pick.rows[i]; closePick(); if (r) selectBoard(r.name); }
@@ -866,6 +1007,29 @@ document.addEventListener("keydown", function (ev) {
 });
 showTab(state.view);
 poll(); setInterval(poll, 2000);
+function updateTelemetry(usage) {
+  var tb = document.getElementById("tokenBadge"), tt = document.getElementById("tokenText");
+  if (usage && (usage.input || usage.output || usage.cacheRead || usage.cost)) {
+    tb.hidden = false;
+    var costStr = usage.cost ? " · <span class='cost'>$" + usage.cost.toFixed(4) + "</span>" : "";
+    tt.innerHTML = "Input: <b>" + usage.input.toLocaleString() + "</b> · Output: <b>" + usage.output.toLocaleString() + "</b> · Cache: <b>" + usage.cacheRead.toLocaleString() + "</b>" + costStr;
+  } else {
+    tb.hidden = true;
+  }
+}
+function pollTelemetry() {
+  var p = state.project ? "?project=" + encodeURIComponent(state.project) : "";
+  fetch("/api/telemetry" + p)
+    .then(function (r) { return r.json(); })
+    .then(function (data) { updateTelemetry(data.usage); })
+    .catch(function () {});
+}
+pollTelemetry();
+// Auto-refresh interval disabled per user request: only manual refresh button and board selection trigger update.
+document.getElementById("tokenRefresh").onclick = function (e) {
+  e.stopPropagation();
+  pollTelemetry();
+};
 </script></body></html>`;
 
 // The page is one inline script. The CSP allows exactly that script by hash, so injected markup cannot run, and
@@ -898,6 +1062,10 @@ export function startViewer(options: { basePath: string; port?: number }): Viewe
       if (url.pathname === "/api/board") {
         const payload = boardPayload(options.basePath, url.searchParams.get("project"));
         return Response.json(payload, { headers: { "cache-control": "no-store", ...HARDENING } });
+      }
+      if (url.pathname === "/api/telemetry") {
+        const usage = aggregateSessionUsage(options.basePath, url.searchParams.get("project"));
+        return Response.json({ usage }, { headers: { "cache-control": "no-store", ...HARDENING } });
       }
       if (url.pathname === "/") return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": PAGE_CSP, ...HARDENING } });
       return new Response("not found", { status: 404 });

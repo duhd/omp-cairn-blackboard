@@ -51,8 +51,8 @@ async function loadInstance(
     registerTool(tool: ToolDef) {
       tools[tool.name] = tool;
     },
-    registerCommand(_name: string, options: { handler: CommandHandler }) {
-      command = options.handler;
+    registerCommand(name: string, options: { handler: CommandHandler }) {
+      if (name === "fact-board") command = options.handler;
     },
     on(event: string, handler: ShutdownHandler & ToolCallHandler & CompactingHandler) {
       if (event === "session_shutdown") shutdown = handler;
@@ -323,7 +323,8 @@ test("tool-level parameter aliases work correctly through execute()", async () =
   expect(JSON.parse(hintRes.content[0].text).content).toBe("steering note via text alias");
 
   // board_complete
-  await tools.board_complete.execute("i7", { from: "origin", description: "goal reached", project: "alias-p" });
+  const completeRes = await tools.board_complete.execute("i7", { from: "origin", description: "goal reached", project: "alias-p" });
+  expect(JSON.parse(completeRes.content[0].text).warning).toContain("explicitly reviewed and confirmed");
 
   // board_reopen with 'why' alias and worker
   const reopenRes = await tools.board_reopen.execute("i8", { why: "need extra checks", worker: "verifier", project: "alias-p" });
