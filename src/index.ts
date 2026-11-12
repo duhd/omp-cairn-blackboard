@@ -14,6 +14,7 @@ import type { Snapshot } from "./board";
 import { dispatchAdvice, projectLeases } from "./dispatch";
 import type { Checkpoint } from "./dispatch";
 import { WRITE_TOOLS, compactionContext, nudgeOnCall, recordToolUse } from "./session-boards";
+import { LADDER_PROVIDERS, factFor } from "./ladder-provider";
 import type { NudgeState, SessionBoards } from "./session-boards";
 import { autoUpdateIfAvailable, checkForUpdate, installedPlugin, updateCachePath } from "./update-check";
 import { startViewer } from "./viewer";
@@ -46,6 +47,30 @@ shared.sessions ??= new Map();
 shared.nudges ??= new Map();
 shared.checkpoints ??= new Map();
 shared.lastLook ??= new Map();
+
+type LadderProvider = ((block: { text: string }) => string | undefined) & { [CAIRN_PROVIDER]?: true };
+const ladderHost = globalThis as typeof globalThis & { [LADDER_PROVIDERS]?: LadderProvider[] };
+// Every module instance (session, subagent, reload) has its own `ladderFact`; the tag keeps one per process.
+const CAIRN_PROVIDER: unique symbol = Symbol.for("omp-cairn-blackboard.ladder-provider");
+
+/** Boards any session in this process has used, read from disk so facts written by subagents count too. */
+function ladderFact(block: { text: string }): string | undefined {
+  const projects = new Set<string>();
+  // Only one instance's `ladderFact` is registered per process; read the live state, not that instance's capture.
+  for (const boards of (host[SHARED_KEY] ?? shared).sessions?.values() ?? []) for (const project of boards.keys()) projects.add(project);
+  for (const project of projects) {
+    // A ladder calls this while building a provider request: a locked or damaged board must not fail the request.
+    try {
+      const read = readSnapshot(resolveDbPath(project || undefined));
+      if (!("board" in read)) continue;
+      const line = factFor(block.text, read.facts, project);
+      if (line) return line;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
 
 /** Reading a board costs a query per table, so the dispatcher looks at most this often per session. */
 const DISPATCH_LOOK_MS = 30_000;
@@ -147,6 +172,8 @@ function nextSteps(project: string | undefined): string {
 export default function blackboard(pi: ExtensionAPI): void {
   const z = pi.zod;
   const project = z.string().optional().describe("Board name; omit for the default board. Each project is its own graph.");
+  const ladderProviders = (ladderHost[LADDER_PROVIDERS] ??= []);
+  if (!ladderProviders.some(provider => provider[CAIRN_PROVIDER])) ladderProviders.push(Object.assign(ladderFact, { [CAIRN_PROVIDER]: true as const }));
 
   pi.registerTool({
     name: "board_init",

@@ -359,3 +359,20 @@ test("calls to xd://fact_claim via write normalize toolName to reset nudges and 
   const context = compacting({ sessionId: "session-xd-norm" })?.context.join("\n") ?? "";
   expect(context).toContain('project "xd-tracked-proj"');
 });
+
+test("a Visibility Ladder sees one cairn provider per process, which collapses a result to the fact quoting it", async () => {
+  process.env.FACT_BOARD_DB = join(dir, "ladder-board.db");
+  const a = await loadInstance("ladder-a");
+  await loadInstance("ladder-b");
+  const registry = (globalThis as Record<symbol, unknown>)[Symbol.for("omp.visibility-ladder.providers")] as Array<(block: { text: string }) => string | undefined>;
+  expect(registry).toHaveLength(1);
+
+  const quoted = "src/auth/session.ts:42: if (expiresAt < now) return refresh(token);";
+  const block = { text: `header\n${quoted}\nfooter` };
+  await a.tools.board_init.execute("l1", { origin: "o", goal: "g", project: "ladder-p" });
+  const claimed = JSON.parse((await a.tools.fact_claim.execute("l2", { text: "expiry check uses <", evidence: `grep: ${quoted}`, from: "origin", project: "ladder-p" })).content[0].text);
+  // Only boards a session has used are searched.
+  expect(registry[0](block)).toBeUndefined();
+  a.toolCall({ toolName: "fact_claim", input: { text: "t", project: "ladder-p" } }, sessionOf("session-ladder"));
+  expect(registry[0](block)).toBe(`→ fact ${claimed.id.slice(0, 12)} (board ladder-p): expiry check uses <`);
+});

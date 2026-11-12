@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Visibility Ladder provider**: when a Visibility Ladder extension collapses a large tool result to a short or hidden level, and a fact on a board this process has used quotes a line (40 characters or longer) of that result in its evidence, the result collapses to a one-line pointer at that fact instead: `→ fact <id> (board <project>): <text>`. Disputed facts are skipped and the newest match wins. The plugin registers one provider per process under `Symbol.for("omp.visibility-ladder.providers")` and does nothing unless such an extension is loaded. Matching is in `src/ladder-provider.ts`.
+
 ## 0.8.1 — 2026-11-12
 
 ### Added
