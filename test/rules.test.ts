@@ -56,3 +56,19 @@ test("releasing with a stale token while another worker holds the lease still fa
   expect(() => board.reasonRelease(`${reason_token}-stale`)).toThrow("not held with that token");
   board.close();
 });
+
+test("anchors can be recorded on facts, intents, and retrieved via anchorsOf / snapshot", () => {
+  const board = new Board(projectDbPath(base(), "anchors-p"));
+  board.init({ origin: "o", goal: "g" });
+  const { reason_token } = board.reasonClaim("controller");
+  const intent = board.createIntent({ description: "fix auth", from: ["origin"], reasonToken: reason_token, anchors: ["src/auth.ts"] });
+  expect(board.anchorsOf(intent.id)).toEqual(["src/auth.ts"]);
+
+  const fact = board.claimFact({ text: "auth verified", claimedBy: "controller", from: ["origin"], anchors: ["src/auth.ts", "test/auth.test.ts"] });
+  expect(board.anchorsOf(fact.id)).toEqual(["src/auth.ts", "test/auth.test.ts"]);
+
+  // dynamic addAnchor
+  board.addAnchor(intent.id, "docs/auth.md");
+  expect(board.anchorsOf(intent.id)).toEqual(["docs/auth.md", "src/auth.ts"]);
+  board.close();
+});

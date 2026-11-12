@@ -73,8 +73,8 @@ export interface FactRow {
   created_at: number;
 }
 
-/** A fact plus the intents that produced it (empty for facts claimed directly). */
-export type FactView = FactRow & { produced_by: string[]; /** Facts (or "origin") a directly claimed fact builds on. */ from: string[] };
+/** A fact plus the intents that produced it and target anchors. */
+export type FactView = FactRow & { produced_by: string[]; /** Facts (or "origin") a directly claimed fact builds on. */ from: string[]; anchors: string[] };
 
 interface IntentRow {
   id: string;
@@ -90,8 +90,7 @@ interface IntentRow {
 }
 
 /** An intent as exposed to callers: never includes the lease token. */
-export type IntentView = Omit<IntentRow, "lease_token"> & { from: string[]; lease_expires_at: number | null };
-
+export type IntentView = Omit<IntentRow, "lease_token"> & { from: string[]; lease_expires_at: number | null; anchors: string[] };
 export interface HintRow {
   id: string;
   content: string;
@@ -115,6 +114,7 @@ export interface Snapshot {
   facts: FactView[];
   intents: IntentView[];
   hints: HintRow[];
+  anchors: Record<string, string[]>;
   /** Facts that cite no source and were produced by no intent: they dangle in the graph. */
   floatingFacts: string[];
   /** Facts whose provenance is lost (written by `fact_claim` without a name). */
@@ -179,6 +179,11 @@ CREATE TABLE IF NOT EXISTS fact_sources (
   fact_id TEXT NOT NULL,
   source_id TEXT NOT NULL,
   PRIMARY KEY (fact_id, source_id)
+);
+CREATE TABLE IF NOT EXISTS anchors (
+  node_id TEXT NOT NULL,
+  target TEXT NOT NULL,
+  PRIMARY KEY (node_id, target)
 );
 CREATE TABLE IF NOT EXISTS hints (
   id TEXT PRIMARY KEY,
@@ -374,7 +379,7 @@ export class Board {
    * on ("origin" for the first), which is what draws its edges in the graph. Explorers working an intent should
    * conclude it instead, which records provenance through the intent.
    */
-  claimFact(input: { text: string; claimedBy?: string; evidence?: string; from?: readonly string[] }): FactRow {
+  claimFact(input: { text: string; claimedBy?: string; evidence?: string; from?: readonly string[]; anchors?: readonly string[] }): FactRow {
     return this.write(() => {
       if (this.getMeta("status") === "completed") {
         throw new BoardError("board is completed; call board_reopen with the reason it is not actually done", {
@@ -400,6 +405,10 @@ export class Board {
       // A repeated claim keeps its first row but may add sources it did not cite before.
       const insert = this.db.query("INSERT OR IGNORE INTO fact_sources (fact_id, source_id) VALUES (?, ?)");
       for (const source of sources) insert.run(id, source);
+      if (input.anchors && input.anchors.length > 0) {
+        const anchorInsert = this.db.query("INSERT OR IGNORE INTO anchors (node_id, target) VALUES (?, ?)");
+        for (const target of input.anchors) anchorInsert.run(id, target.trim());
+      }
       return this.requireFact(id);
     });
   }
@@ -597,7 +606,7 @@ export class Board {
   }
 
   /** Declares a step into the unknown, growing from existing facts. Requires the Reason lease; capped per pass. */
-  createIntent(input: { description: string; from: readonly string[]; reasonToken: string }): IntentView {
+  createIntent(input: { description: string; from: readonly string[]; reasonToken: string; anchors?: readonly string[] }): IntentView {
     return this.write(() => {
       this.expireStale();
       this.assertActive();
@@ -624,10 +633,29 @@ export class Board {
         )
         .run(id, stored("description", input.description), this.getMeta("reason_worker"), now, now);
       this.insertSources(id, sources);
+      if (input.anchors && input.anchors.length > 0) {
+        const anchorInsert = this.db.query("INSERT OR IGNORE INTO anchors (node_id, target) VALUES (?, ?)");
+        for (const target of input.anchors) anchorInsert.run(id, target.trim());
+      }
       this.setMeta("reason_created", String(created + 1));
       this.setMeta("reason_heartbeat_at", String(now));
       return this.view(this.requireIntent(id));
     });
+  }
+  addAnchor(nodeId: string, target: string): void {
+    this.write(() => {
+      this.db.query("INSERT OR IGNORE INTO anchors (node_id, target) VALUES (?, ?)").run(nodeId, target.trim());
+    });
+  }
+
+  anchorsOf(nodeId: string): string[] {
+    if (!this.db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'anchors'").get()) return [];
+    return this.db.query<{ target: string }, [string]>("SELECT target FROM anchors WHERE node_id = ? ORDER BY target").all(nodeId).map(r => r.target);
+  }
+
+  activeClaimedIntentId(): string | null {
+    const row = this.db.query<{ id: string }, []>("SELECT id FROM intents WHERE status = 'claimed' ORDER BY heartbeat_at DESC LIMIT 1").get();
+    return row ? row.id : null;
   }
 
   private sourceFacts(ids: readonly string[]): FactRow[] {
@@ -918,13 +946,19 @@ export function snapshotFrom(db: Database, limit: number, leaseMs = envNumber("F
       factSources.set(r.fact_id, [...(factSources.get(r.fact_id) ?? []), r.source_id]);
     }
   }
+  const anchorMap = new Map<string, string[]>();
+  if (db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'anchors'").get()) {
+    for (const r of db.query<{ node_id: string; target: string }, []>("SELECT node_id, target FROM anchors ORDER BY target").all()) {
+      anchorMap.set(r.node_id, [...(anchorMap.get(r.node_id) ?? []), r.target]);
+    }
+  }
   const intents = db
     .query<Omit<IntentRow, "lease_token">, [number]>(
       `SELECT id, description, status, created_by, claimed_by, heartbeat_at, to_fact_id, created_at, updated_at
        FROM intents ORDER BY created_at DESC LIMIT ?`,
     )
     .all(limit)
-    .map(row => ({ ...row, from: sources.get(row.id) ?? [], lease_expires_at: row.status === "claimed" && row.heartbeat_at ? row.heartbeat_at + leaseMs : null }));
+    .map(row => ({ ...row, from: sources.get(row.id) ?? [], anchors: anchorMap.get(row.id) ?? [], lease_expires_at: row.status === "claimed" && row.heartbeat_at ? row.heartbeat_at + leaseMs : null }));
   const producers = new Map<string, string[]>();
   for (const intent of intents) {
     if (intent.to_fact_id) producers.set(intent.to_fact_id, [...(producers.get(intent.to_fact_id) ?? []), intent.id]);
@@ -932,13 +966,15 @@ export function snapshotFrom(db: Database, limit: number, leaseMs = envNumber("F
   const facts = db
     .query<FactRow, [number]>("SELECT * FROM facts ORDER BY created_at DESC LIMIT ?")
     .all(limit)
-    .map(row => ({ ...row, produced_by: producers.get(row.id) ?? [], from: factSources.get(row.id) ?? [] }));
+    .map(row => ({ ...row, produced_by: producers.get(row.id) ?? [], from: factSources.get(row.id) ?? [], anchors: anchorMap.get(row.id) ?? [] }));
   const hints = db.query<HintRow, [number]>("SELECT * FROM hints ORDER BY created_at DESC, rowid DESC LIMIT ?").all(limit);
   // A fact with no source and no producing intent hangs off the graph: it cannot be traced to anything.
   const floatingFacts = facts.filter(f => f.produced_by.length === 0 && f.from.length === 0).map(f => f.id);
   const unknownFacts = facts.filter(f => f.claimed_by === "unknown").map(f => f.id);
   const edges = facts.reduce((n, f) => n + f.from.length, 0) + intents.reduce((n, i) => n + (i.to_fact_id ? 1 : 0) + i.from.length, 0);
-  return { board: infoFrom(db), facts, intents, hints, floatingFacts, unknownFacts, edges };
+  const anchorsRecord: Record<string, string[]> = {};
+  for (const [k, v] of anchorMap) anchorsRecord[k] = v;
+  return { board: infoFrom(db), facts, intents, hints, floatingFacts, unknownFacts, edges, anchors: anchorsRecord };
 }
 
 /**
@@ -1017,6 +1053,7 @@ function chronological(snapshot: Snapshot): Snapshot {
     floatingFacts: snapshot.floatingFacts,
     unknownFacts: snapshot.unknownFacts,
     edges: snapshot.edges,
+    anchors: snapshot.anchors,
   };
 }
 

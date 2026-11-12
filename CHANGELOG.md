@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.1 — 2026-11-12
+
+### Added
+
+- **Target Anchors & Coverage Map**: inspired by dual-graph architecture (ARTEX/Cairn), facts and intents can be bound to target files/components (`anchors`).
+- **Target Coverage View**: new tab on `/fact-board` displaying real-time target coverage cards (confirmed, in-progress, disputed) across codebase components.
+- **Auto-anchoring**: tool file interactions automatically associate target paths to the active claimed intent.
+- **Multi-round Dependency Todolist**: updated Cairn mindset rules to prevent speculative parallel intents on sequential dependencies.
+
 ## 0.9.0 — 2026-11-12
 
 ### Added

@@ -226,10 +226,11 @@ export default function blackboard(pi: ExtensionAPI): void {
     name: "fact_claim",
     description:
       "Record a confirmed finding or finished milestone. `from` lists the fact ids it builds on (comma-separated or a JSON array; \"origin\" for the first), which draws its edges in the graph; without it the fact floats unconnected. Work done by a worker on an intent should use intent_conclude instead, which records provenance through the intent. Idempotent: identical text returns the existing fact (any new `from` ids are added).",
-    parameters: z.object({ text: z.string(), claimed_by: z.string().optional(), evidence: z.string().optional(), from: z.string().optional(), project }),
+    parameters: z.object({ text: z.string(), claimed_by: z.string().optional(), evidence: z.string().optional(), from: z.string().optional(), anchors: z.string().optional(), project }),
     async execute(_id, params) {
       return run(() => {
-        const fact = boardFor(params.project).claimFact({ text: params.text, claimedBy: params.claimed_by, evidence: params.evidence, from: params.from ? parseIdList(params.from) : undefined });
+        const anchorsList = params.anchors ? parseIdList(params.anchors) : undefined;
+        const fact = boardFor(params.project).claimFact({ text: params.text, claimedBy: params.claimed_by, evidence: params.evidence, from: params.from ? parseIdList(params.from) : undefined, anchors: anchorsList });
         // Provenance is the point of the board: a nameless or unsourced fact cannot be traced or placed in the graph.
         const warnings: string[] = [];
         if (!params.claimed_by) warnings.push('claimed_by omitted: attributed to the Reason-lease holder, else the last controller worker, else "unknown"; pass it to credit a different worker');
@@ -288,13 +289,14 @@ export default function blackboard(pi: ExtensionAPI): void {
     name: "intent_create",
     description:
       'Declare a direction to explore. Pass `description` (required, the direction text; `text` is accepted as an alias) plus `from` (fact ids, or "origin", defaults to "origin") and `reason_token` from reason_claim. Declare the intent BEFORE doing the work it covers (then intent_claim, do the work, intent_conclude with the result), so the board shows work in progress instead of trailing it.',
-    parameters: z.object({ description: z.string().optional(), text: z.string().optional(), from: z.string().optional(), reason_token: z.string(), project }),
+    parameters: z.object({ description: z.string().optional(), text: z.string().optional(), from: z.string().optional(), anchors: z.string().optional(), reason_token: z.string(), project }),
     async execute(_id, params) {
       return run(() => {
         const description = params.description ?? params.text;
         if (!description) throw new BoardError("description is required (pass `description`, or `text` as an alias)");
         const fromStr = params.from && params.from.trim().length > 0 ? params.from : "origin";
-        return boardFor(params.project).createIntent({ description, from: parseIdList(fromStr), reasonToken: params.reason_token });
+        const anchorsList = params.anchors ? parseIdList(params.anchors) : undefined;
+        return boardFor(params.project).createIntent({ description, from: parseIdList(fromStr), reasonToken: params.reason_token, anchors: anchorsList });
       });
     },
   });
@@ -481,6 +483,22 @@ export default function blackboard(pi: ExtensionAPI): void {
     })() : event.input;
 
     recordToolUse(shared.sessions, sessionId, normalizedTool, normalizedInput);
+    // Auto-anchor: infer target file path from tool calls (read, edit, write, bash)
+    if (targetPath && !isXd && !targetPath.startsWith("xd://") && !targetPath.startsWith("http")) {
+      const activeProjects = shared.sessions.get(sessionId);
+      if (activeProjects) {
+        for (const p of activeProjects.keys()) {
+          try {
+            const board = boardFor(p);
+            const lease = board.info();
+            if (lease.status === "active") {
+              const claimedId = board.activeClaimedIntentId();
+              if (claimedId) board.addAnchor(claimedId, targetPath);
+            }
+          } catch {}
+        }
+      }
+    }
     // Only the main session is nudged: a subagent's reply goes to its parent, not to a person who can act on it.
     if (ctx.agent.kind !== "main") return;
     const now = Date.now();

@@ -182,7 +182,7 @@ function boardPayload(basePath: string, project: string | null) {
     const truncated = read.facts.length > SNAPSHOT_LIMIT || read.intents.length > SNAPSHOT_LIMIT;
     // The graph does not draw hints, so their overflow is reported separately, for the list only.
     const hintsTruncated = read.hints.length > SNAPSHOT_LIMIT;
-    const snapshot = { board: read.board, facts: read.facts.slice(0, SNAPSHOT_LIMIT), intents: read.intents.slice(0, SNAPSHOT_LIMIT), hints: read.hints.slice(0, SNAPSHOT_LIMIT), floatingFacts: read.floatingFacts, unknownFacts: read.unknownFacts, edges: read.edges };
+    const snapshot = { board: read.board, facts: read.facts.slice(0, SNAPSHOT_LIMIT), intents: read.intents.slice(0, SNAPSHOT_LIMIT), hints: read.hints.slice(0, SNAPSHOT_LIMIT), floatingFacts: read.floatingFacts, unknownFacts: read.unknownFacts, edges: read.edges, anchors: read.anchors };
     return { ...base, dbPath: path, ...snapshot, truncated, hintsTruncated, limit: SNAPSHOT_LIMIT, graph: buildGraph(snapshot, now) };
   } catch (err) {
     return { ...base, note: `read failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -367,6 +367,14 @@ main{padding:24px 24px 64px;max-width:1440px;margin:0 auto}
 .legend .lg{border-color:var(--warn)}
 #graph{display:block;width:100%;height:calc(100vh - 520px);min-height:360px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);cursor:grab;touch-action:none;user-select:none}
 #graph.dragging{cursor:grabbing}
+.cov-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:16px}
+.cov-card{padding:14px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);display:flex;flex-direction:column;gap:8px}
+.cov-target{font:12px/1.4 var(--font-mono);font-weight:600;color:var(--fg);word-break:break-all}
+.cov-badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cov-badge{font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;line-height:1}
+.cov-badge.verified{background:color-mix(in oklch,var(--ok) 18%,var(--surface));color:var(--ok)}
+.cov-badge.claimed{background:color-mix(in oklch,var(--accent) 18%,var(--surface));color:var(--accent)}
+.cov-badge.disputed{background:color-mix(in oklch,var(--bad) 18%,var(--surface));color:var(--bad)}
 #arrow path{fill:var(--border-2)}
 .edge{fill:none;stroke:var(--border-2);stroke-width:1.5}
 .edge.back{stroke-dasharray:5 4}
@@ -444,6 +452,7 @@ main{padding:24px 24px 64px;max-width:1440px;margin:0 auto}
   <div class="seg" role="tablist" aria-label="Board view">
     <button id="tabList" type="button" role="tab" aria-selected="true" aria-controls="listView">List</button>
     <button id="tabGraph" type="button" role="tab" aria-selected="false" aria-controls="graphView">Graph</button>
+    <button id="tabCoverage" type="button" role="tab" aria-selected="false" aria-controls="coverageView">Coverage</button>
   </div>
   <span class="meta" id="meta"></span>
 </nav>
@@ -477,6 +486,15 @@ main{padding:24px 24px 64px;max-width:1440px;margin:0 auto}
       <span class="meta" id="gmeta"></span>
     </div>
     <svg id="graph" role="img" aria-label="Fact and intent graph"></svg>
+  </div>
+  <div id="coverageView" hidden>
+    <div class="overview" id="covOverview">
+      <div class="overview-head">
+        <span class="overview-project">Target Coverage Map</span>
+        <span class="meta" id="covMeta"></span>
+      </div>
+      <div id="covGrid" class="cov-grid"></div>
+    </div>
   </div>
 </main>
 <script>
@@ -818,12 +836,58 @@ graphEl.addEventListener("pointerup", function () {
   if (!d.moved && d.node) openNode(d.node.getAttribute("data-id"));
 });
 graphEl.addEventListener("pointercancel", function () { drag = null; graphEl.classList.remove("dragging"); });
+function renderCoverage(d) {
+  var grid = document.getElementById("covGrid");
+  var meta = document.getElementById("covMeta");
+  grid.replaceChildren();
+  var anchors = d.anchors || {};
+  var targets = {};
+  var factsMap = {};
+  (d.facts || []).forEach(function (f) {
+    factsMap[f.id] = f;
+    (f.anchors || []).forEach(function (t) {
+      if (!targets[t]) targets[t] = { confirmed: 0, inProgress: 0, disputed: 0 };
+      if (f.status === "disputed") targets[t].disputed++;
+      else targets[t].confirmed++;
+    });
+  });
+  var intentsMap = {};
+  (d.intents || []).forEach(function (i) {
+    intentsMap[i.id] = i;
+    (i.anchors || []).forEach(function (t) {
+      if (!targets[t]) targets[t] = { confirmed: 0, inProgress: 0, disputed: 0 };
+      if (i.status === "concluded") targets[t].confirmed++;
+      else targets[t].inProgress++;
+    });
+  });
+
+  var targetKeys = Object.keys(targets).sort();
+  if (!targetKeys.length) {
+    grid.appendChild(el("div", "empty", "No target anchors recorded yet. Tools auto-anchor touched files, or pass anchors to fact_claim/intent_create."));
+    meta.textContent = "0 targets covered";
+    return;
+  }
+  meta.textContent = targetKeys.length + " target(s) tracked across anchor links";
+  targetKeys.forEach(function (t) {
+    var info = targets[t];
+    var card = el("div", "cov-card");
+    card.appendChild(el("div", "cov-target", t));
+    var badges = el("div", "cov-badges");
+    if (info.confirmed > 0) badges.appendChild(el("span", "cov-badge verified", info.confirmed + " confirmed"));
+    if (info.inProgress > 0) badges.appendChild(el("span", "cov-badge claimed", info.inProgress + " in-progress"));
+    if (info.disputed > 0) badges.appendChild(el("span", "cov-badge disputed", info.disputed + " disputed"));
+    card.appendChild(badges);
+    grid.appendChild(card);
+  });
+}
 
 function render() {
   var d = state.data; if (!d) return;
   renderProjects(d);
   renderOverview(d);
-  if (state.view === "graph") renderGraph(d); else renderList(d);
+  if (state.view === "graph") renderGraph(d);
+  else if (state.view === "coverage") renderCoverage(d);
+  else renderList(d);
   var partial = d.truncated || (state.view === "list" && d.hintsTruncated);
   var meta = document.getElementById("meta");
   meta.textContent = (partial ? "partial view (newest " + d.limit + ") · " : "") + (d.dbPath || "") + " · updated " + new Date(d.now).toLocaleTimeString();
@@ -956,10 +1020,13 @@ function showTab(name) {
   state.view = name;
   document.getElementById("listView").hidden = name !== "list";
   document.getElementById("graphView").hidden = name !== "graph";
+  document.getElementById("coverageView").hidden = name !== "coverage";
   document.getElementById("tabList").className = name === "list" ? "on" : "";
   document.getElementById("tabGraph").className = name === "graph" ? "on" : "";
+  document.getElementById("tabCoverage").className = name === "coverage" ? "on" : "";
   document.getElementById("tabList").setAttribute("aria-selected", String(name === "list"));
   document.getElementById("tabGraph").setAttribute("aria-selected", String(name === "graph"));
+  document.getElementById("tabCoverage").setAttribute("aria-selected", String(name === "coverage"));
   if (name === "list") state.first = true;
   syncUrl();
   render();
@@ -986,6 +1053,7 @@ window.addEventListener("resize", closePick);
 window.addEventListener("scroll", closePick, { passive: true });
 document.getElementById("tabList").onclick = function () { showTab("list"); };
 document.getElementById("tabGraph").onclick = function () { showTab("graph"); };
+document.getElementById("tabCoverage").onclick = function () { showTab("coverage"); };
 document.getElementById("fit").onclick = function () { fit(); };
 document.getElementById("q").addEventListener("input", function (e) { state.filter = e.target.value.trim().toLowerCase(); render(); });
 document.getElementById("showDone").addEventListener("change", function (e) { state.showDone = e.target.checked; render(); });

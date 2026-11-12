@@ -92,3 +92,24 @@ test("aggregateSessionUsage isolates projects correctly across multiple sessions
   const uNone = aggregateSessionUsage(base, "project-none");
   expect(uNone.input).toBe(0);
 });
+
+test("viewer /api/board includes anchors in snapshot and fact/intent views", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "viewer-anchors-"));
+  const base = join(tempDir, "fact-board.db");
+  const board = new Board(projectDbPath(base, "anchors-api"));
+  board.init({ origin: "o", goal: "g" });
+  const { reason_token } = board.reasonClaim("controller");
+  board.createIntent({ description: "task a", from: ["origin"], reasonToken: reason_token, anchors: ["src/index.ts"] });
+  board.claimFact({ text: "fact a", claimedBy: "controller", from: ["origin"], anchors: ["src/index.ts", "docs/api.md"] });
+
+  const viewer = startViewer({ basePath: base, port: 0 });
+  try {
+    const res = await (await fetch(`${viewer.url}/api/board?project=anchors-api`)).json();
+    expect(res.facts[0].anchors).toEqual(["docs/api.md", "src/index.ts"]);
+    expect(res.intents[0].anchors).toEqual(["src/index.ts"]);
+    expect(res.anchors[res.facts[0].id]).toEqual(["docs/api.md", "src/index.ts"]);
+  } finally {
+    viewer.stop();
+    board.close();
+  }
+});
