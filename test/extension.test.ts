@@ -359,6 +359,27 @@ test("calls to xd://fact_claim via write normalize toolName to reset nudges and 
   const context = compacting({ sessionId: "session-xd-norm" })?.context.join("\n") ?? "";
   expect(context).toContain('project "xd-tracked-proj"');
 });
+test("tool_call hook auto-anchors file paths to active claimed intent in project", async () => {
+  const dbPath = join(dir, "auto-anchor-board.db");
+  process.env.FACT_BOARD_DB = dbPath;
+  const { toolCall, tools } = await loadInstance("auto-anchor");
+  const sess = sessionOf("sess-anchor");
+
+  await tools.board_init.execute("i1", { origin: "o", goal: "g", project: "auto-p" });
+  const { reason_token } = JSON.parse((await tools.reason_claim.execute("i2", { worker: "controller", project: "auto-p" })).content[0].text);
+  const intentObj = JSON.parse((await tools.intent_create.execute("i3", { text: "task x", reason_token, project: "auto-p" })).content[0].text);
+  await tools.intent_claim.execute("i4", { intent_id: intentObj.id, worker: "worker-x", project: "auto-p" });
+
+  // Register session on project
+  toolCall({ toolName: "write", input: { path: "xd://fact_query", content: JSON.stringify({ project: "auto-p" }) } }, sess);
+
+  // Tool call with file path
+  toolCall({ toolName: "read", input: { path: "src/auth.ts" } }, sess);
+
+  const board = (await import("../src/board")).newBoard ? null : new (await import("../src/board")).Board((await import("../src/board")).projectDbPath(dbPath, "auto-p"));
+  expect(board?.anchorsOf(intentObj.id)).toContain("src/auth.ts");
+  board?.close();
+});
 
 test("a Visibility Ladder sees one cairn provider per process, which collapses a result to the fact quoting it", async () => {
   process.env.FACT_BOARD_DB = join(dir, "ladder-board.db");
