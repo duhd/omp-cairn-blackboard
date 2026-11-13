@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.4 — 2026-11-13
+
+### Added
+
+- **Worker-Scoped Auto-Heartbeat**: Added `Board.refreshOwnedHeartbeat(worker, id?)` to automatically maintain lease heartbeat for session-owned workers during long tool calls and wait periods. Updates are strictly isolated to `claimed_by === worker` and throttled to only fire when `heartbeat_at < now - leaseMs / 3`, preventing write contention on SQLite while preserving lease expiry for dead/crashed workers.
+- **Long-Running Task Guidelines**: Updated `rules/cairn-mindset.md` and tool descriptions documenting lease expiry windows and heartbeat conventions for background tasks > 15 minutes.
+
 ## 0.9.3 — 2026-11-13
 
 ### Fixed
