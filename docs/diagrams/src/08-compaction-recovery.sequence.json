@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Surviving a context compaction",
+    "locale": "en",
+    "output": ".archify/docs-diagrams/08-compaction-recovery.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/duhd/omp-cairn-blackboard.git",
+      "provider": "github",
+      "revision": "72a5a5efe96fe1fde42234066dd8dde5703985b5"
+    }
+  },
+  "participants": [
+    { "id": "agent", "type": "external", "label": "Agent", "sublabel": "worker or controller", "sources": [{ "path": "src/session-boards.ts", "line": 10, "end_line": 14, "label": "why" }] },
+    { "id": "ext", "type": "backend", "label": "Extension", "sublabel": "session state in memory", "sources": [{ "path": "src/session-boards.ts", "line": 15, "end_line": 26, "label": "recordToolUse" }] },
+    { "id": "omp", "type": "cloud", "label": "omp compactor", "sublabel": "summarizer", "sources": [{ "path": "src/index.ts", "line": 569, "end_line": 572, "label": "session.compacting" }] },
+    { "id": "board", "type": "database", "label": "Board", "sublabel": "SQLite", "sources": [{ "path": "src/board.ts", "line": 696, "end_line": 709, "label": "claimIntent owner path" }] }
+  ],
+  "segments": [
+    { "from": 150, "to": 230, "label": "Before" },
+    { "from": 240, "to": 340, "label": "Compaction" },
+    { "from": 350, "to": 470, "label": "Recovery" }
+  ],
+  "messages": [
+    { "id": "board-call", "from": "agent", "to": "board", "y": 170, "label": "intent_claim(id, worker)", "variant": "emphasis" },
+    { "id": "record", "from": "agent", "to": "ext", "y": 200, "label": "tool_call: project + worker", "variant": "dashed", "note": "only names matching the name rules are kept" },
+    { "id": "compact", "from": "omp", "to": "ext", "y": 262, "label": "session.compacting", "variant": "emphasis" },
+    { "id": "context", "from": "ext", "to": "omp", "y": 292, "label": "board names + required first step", "variant": "return" },
+    { "id": "summary", "from": "omp", "to": "agent", "y": 322, "label": "summary with Next Steps", "variant": "return" },
+    { "id": "export", "from": "agent", "to": "board", "y": 372, "label": "board_export(timeline)", "variant": "emphasis" },
+    { "id": "reclaim", "from": "agent", "to": "board", "y": 402, "label": "intent_claim, same worker name", "variant": "security" },
+    { "id": "token-back", "from": "board", "to": "agent", "y": 432, "label": "lease_token returned", "variant": "return", "note": "the holder asking again is a heartbeat" }
+  ],
+  "activations": [
+    { "participant": "ext", "from": 195, "to": 298, "type": "backend" },
+    { "participant": "board", "from": 165, "to": 175, "type": "database" },
+    { "participant": "board", "from": 367, "to": 462, "type": "database" }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Names only, never board text",
+      "items": ["The summary carries project and worker names", "Board contents stay data, not instructions"]
+    },
+    {
+      "dot": "amber",
+      "title": "A nudge, not a guarantee",
+      "items": ["State lives in process memory per session id", "Subagents are tracked under their own session ids"]
+    }
+  ]
+}

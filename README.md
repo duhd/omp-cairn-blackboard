@@ -35,6 +35,54 @@ origin ──► Intent ──► Fact ──► Intent ──► Fact ──►
 - An **intent** is a step into the unknown. It cites the facts it grows from (`from`) and, when concluded, yields exactly one fact (`to`). Edges are stored, so the path from origin to goal is auditable.
 - A **hint** is human steering, delivered to workers when they claim an intent and included in every export.
 
+## Architecture and flows
+
+Ten diagrams, drawn from the source at commit `72a5a5e`, cover the system and each flow. Every node carries the file and line it was read from in its JSON source under [`docs/diagrams/src/`](docs/diagrams/src/); the [index](docs/diagrams/README.md) says what each diagram answers and how to redraw them.
+
+### System overview
+
+[![System overview](docs/diagrams/01-overview.png)](docs/diagrams/01-overview.png)
+
+The `Board` class is the only SQLite writer. Tools reach it through `run()`, which maps `BoardError` to a structured `{ error, code }` result; hooks only advise the main session; the viewer opens the file read-only.
+
+### Data model
+
+[![Board data model](docs/diagrams/02-data-model.png)](docs/diagrams/02-data-model.png)
+
+Graph edges live in three places: `intent_sources` (fact to intent), `intents.to_fact_id` (intent to fact or `goal`) and `fact_sources` (fact to fact, for directly claimed facts).
+
+### Search loop and one round trip
+
+[![cairn-search loop](docs/diagrams/03-cairn-search-loop.png)](docs/diagrams/03-cairn-search-loop.png)
+
+[![Reason and Explore round trip](docs/diagrams/05-explore-roundtrip.png)](docs/diagrams/05-explore-roundtrip.png)
+
+The controller declares at most two intents per Reason pass; each worker claims one, works, and concludes it with exactly one fact. Every mutation is one `BEGIN IMMEDIATE` transaction, so a failed conclude also rolls back its fact insert.
+
+### Lifecycles
+
+[![Intent and lease lifecycle](docs/diagrams/04-intent-lease.png)](docs/diagrams/04-intent-lease.png)
+
+[![Board lifecycle](docs/diagrams/06-board-completion.png)](docs/diagrams/06-board-completion.png)
+
+A stale lease stays `claimed` until another worker reclaims it, so a slow owner can still conclude. A completed board refuses writes with `board_completed` until `board_reopen` records why it was not done.
+
+### Session automation
+
+[![tool_call hook pipeline](docs/diagrams/07-hook-pipeline.png)](docs/diagrams/07-hook-pipeline.png)
+
+[![Compaction recovery](docs/diagrams/08-compaction-recovery.png)](docs/diagrams/08-compaction-recovery.png)
+
+Hooks never block a tool call: a throwing `tool_call` handler would stop the agent, so board read errors are swallowed and messages are advice only.
+
+### Viewer and data hygiene
+
+[![Viewer data flow](docs/diagrams/09-viewer-dataflow.png)](docs/diagrams/09-viewer-dataflow.png)
+
+[![Redaction and update notice](docs/diagrams/10-redaction-update.png)](docs/diagrams/10-redaction-update.png)
+
+Redaction is best-effort regex applied before text is stored; it is not a vault (see [Security notes](#security-notes)). Network use is limited to the daily update check and the manual `/fact-board-update`; only the latter updates anything, and only by `git pull --ff-only` in a git-checkout install.
+
 ## Install
 
 ```bash
@@ -57,7 +105,7 @@ Quit omp and start it again (`/new` does not load new extensions). The tools the
 
 ### Updates
 
-When a main session starts, the plugin compares its version with `package.json` on `main` (at most once a day; the result is cached in `omp-cairn-blackboard-update.json` next to the default board). If `main` is newer, it shows a notice with the command for your install method. It never updates by itself:
+When a main session starts, the plugin compares its version with `package.json` on `main` (at most once a day; the result is cached in `omp-cairn-blackboard-update.json` next to the default board). If `main` is newer, it shows a notice with the command for your install method. The automatic check never updates by itself; the `/fact-board-update` command runs the same check on demand and, for a linked git checkout only, runs `git pull --ff-only`:
 
 | Installed with | Suggested command |
 |---|---|
@@ -201,6 +249,8 @@ bun src/viewer.ts # run the viewer standalone (from the repo root)
 ```
 
 Layout: `src/board.ts` (graph + coordination), `src/index.ts` (extension: tools + `/fact-board`), `src/viewer.ts`, `src/graph.ts` (graph layout for the viewer), `src/update-check.ts` (new-version notice), `src/redact.ts`, `src/redact-output.ts` (optional feature), `skills/` (`cairn-search`, `dispatcher-check`, `update-version`), `rules/cairn-mindset.md` (always-applied agent guidance), `docs/advisors/board-auditor.yml` (optional, hand-merged advisor entry), `.omp-plugin/marketplace.json` (marketplace catalog).
+
+Diagrams: `docs/diagrams/NN-*.png` (embedded above) and their JSON sources in `docs/diagrams/src/`. They describe the code at commit `72a5a5e`; after changing the flows they cover, redraw them and update each file's `meta.repository.revision`.
 
 ## Uninstall
 

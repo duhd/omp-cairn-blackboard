@@ -1,0 +1,49 @@
+{
+  "schema_version": 3,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Intent and lease lifecycle",
+    "locale": "en",
+    "output": ".archify/docs-diagrams/04-intent-lease.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/duhd/omp-cairn-blackboard.git",
+      "provider": "github",
+      "revision": "72a5a5efe96fe1fde42234066dd8dde5703985b5"
+    }
+  },
+  "mainPath": ["declared", "open", "claimed", "concluded"],
+  "states": [
+    { "id": "declared", "type": "start", "label": "Declared", "sublabel": "Reason lease holder", "tag": "intent_create", "step": "01", "sources": [{ "path": "src/board.ts", "line": 609, "end_line": 644, "label": "createIntent()" }] },
+    { "id": "open", "type": "waiting", "label": "Open", "sublabel": "nobody holds it", "tag": "status=open", "step": "02", "sources": [{ "path": "src/board.ts", "line": 629, "end_line": 634, "label": "INSERT" }] },
+    { "id": "claimed", "type": "active", "label": "Claimed", "sublabel": "lease_token + heartbeat", "tag": "status=claimed", "step": "03", "sources": [{ "path": "src/board.ts", "line": 737, "end_line": 750, "label": "CAS open to claimed" }] },
+    { "id": "concluded", "type": "success", "label": "Concluded", "sublabel": "to_fact_id set", "tag": "terminal", "step": "04", "sources": [{ "path": "src/board.ts", "line": 797, "end_line": 804, "label": "CAS on token" }] },
+    { "id": "stale", "type": "decision", "label": "Lease stale", "sublabel": "no heartbeat in lease window", "tag": "still claimed", "sources": [{ "path": "src/board.ts", "line": 703, "end_line": 704, "label": "expired check" }] },
+    { "id": "reclaimed", "type": "active", "label": "Reclaimed", "sublabel": "new worker, new token", "tag": "CAS on old holder", "sources": [{ "path": "src/board.ts", "line": 716, "end_line": 729, "label": "reclaim" }] },
+    { "id": "lost", "type": "failure", "label": "Lease lost", "sublabel": "old token rejected", "tag": "lease_lost", "sources": [{ "path": "src/board.ts", "line": 754, "end_line": 765, "label": "leaseError()" }] }
+  ],
+  "transitions": [
+    { "id": "declared-open", "from": "declared", "to": "open", "label": "insert row" },
+    { "id": "open-claimed", "from": "open", "to": "claimed", "label": "intent_claim", "variant": "emphasis" },
+    { "id": "claimed-concluded", "from": "claimed", "to": "concluded", "label": "intent_conclude", "note": "needs valid token and non-empty evidence", "variant": "emphasis" },
+    { "id": "claimed-open", "from": "claimed", "to": "open", "label": "intent_release", "note": "token required; clears holder", "variant": "dashed" },
+    { "id": "claimed-claimed", "from": "claimed", "to": "claimed", "label": "heartbeat" },
+    { "id": "claimed-stale", "from": "claimed", "to": "stale", "label": "no heartbeat", "variant": "dashed" },
+    { "id": "stale-concluded", "from": "stale", "to": "concluded", "label": "owner concludes late" },
+    { "id": "stale-reclaimed", "from": "stale", "to": "reclaimed", "label": "other worker claims", "variant": "security" },
+    { "id": "reclaimed-concluded", "from": "reclaimed", "to": "concluded", "label": "intent_conclude" },
+    { "id": "reclaimed-lost", "from": "reclaimed", "to": "lost", "label": "old owner tries", "variant": "security" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Token guards writers",
+      "items": ["Heartbeat, conclude, release are compare-and-swap on lease_token", "A rejected conclude rolls back its fact insert"]
+    },
+    {
+      "dot": "amber",
+      "title": "Slow is not dead",
+      "items": ["A stale lease stays claimed until someone reclaims it", "The owner can still conclude slow work"]
+    }
+  ]
+}

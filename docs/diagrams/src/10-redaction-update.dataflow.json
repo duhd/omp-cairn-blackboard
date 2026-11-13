@@ -1,0 +1,332 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Data hygiene: redaction before store, update notice",
+    "locale": "en",
+    "output": ".archify/docs-diagrams/10-redaction-update.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/duhd/omp-cairn-blackboard.git",
+      "provider": "github",
+      "revision": "72a5a5efe96fe1fde42234066dd8dde5703985b5"
+    }
+  },
+  "stages": [
+    {
+      "label": "Input"
+    },
+    {
+      "label": "Guard"
+    },
+    {
+      "label": "Persist or show"
+    },
+    {
+      "label": "Consumer"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "agentText",
+      "type": "external",
+      "label": "Agent text",
+      "sublabel": "fact, evidence, hint, goal",
+      "stage": 0,
+      "row": 0,
+      "tag": "free text",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 55,
+          "end_line": 58,
+          "label": "stored()"
+        }
+      ]
+    },
+    {
+      "id": "cmdOut",
+      "type": "external",
+      "label": "bash / eval output",
+      "sublabel": "tool_result",
+      "stage": 0,
+      "row": 1,
+      "tag": "opt-in feature",
+      "sources": [
+        {
+          "path": "src/redact-output.ts",
+          "line": 22,
+          "end_line": 22,
+          "label": "REDACTED_TOOLS"
+        }
+      ]
+    },
+    {
+      "id": "limit",
+      "type": "security",
+      "label": "Length limit",
+      "sublabel": "16000 chars, name 200",
+      "stage": 1,
+      "row": 0,
+      "tag": "too_long",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 40,
+          "end_line": 53,
+          "label": "limited()"
+        }
+      ]
+    },
+    {
+      "id": "redact",
+      "type": "security",
+      "label": "redactText",
+      "sublabel": "ordered regex rules",
+      "stage": 1,
+      "row": 1,
+      "tag": "best-effort, linear",
+      "sources": [
+        {
+          "path": "src/redact.ts",
+          "line": 84,
+          "end_line": 86,
+          "label": "redactText"
+        }
+      ]
+    },
+    {
+      "id": "boardDb",
+      "type": "database",
+      "label": "Board file",
+      "sublabel": "stored redacted",
+      "stage": 2,
+      "row": 0,
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 393,
+          "end_line": 404,
+          "label": "claimFact insert"
+        }
+      ]
+    },
+    {
+      "id": "transcript",
+      "type": "messagebus",
+      "label": "Transcript",
+      "sublabel": "what the model sees",
+      "stage": 2,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/redact-output.ts",
+          "line": 24,
+          "end_line": 38,
+          "label": "tool_result hook"
+        }
+      ]
+    },
+    {
+      "id": "remote",
+      "type": "cloud",
+      "label": "GitHub raw",
+      "sublabel": "package.json on main",
+      "stage": 1,
+      "row": 2,
+      "tag": "3 s timeout",
+      "sources": [
+        {
+          "path": "src/update-check.ts",
+          "line": 15,
+          "end_line": 15,
+          "label": "REMOTE_PACKAGE_URL"
+        }
+      ]
+    },
+    {
+      "id": "cache",
+      "type": "database",
+      "label": "Update cache",
+      "sublabel": "checked_at + latest",
+      "stage": 2,
+      "row": 2,
+      "tag": "24 h",
+      "sources": [
+        {
+          "path": "src/update-check.ts",
+          "line": 86,
+          "end_line": 96,
+          "label": "checkForUpdate"
+        }
+      ]
+    },
+    {
+      "id": "notice",
+      "type": "frontend",
+      "label": "Update notice",
+      "sublabel": "session_start: suggests a command",
+      "stage": 3,
+      "row": 2,
+      "tag": "notice only",
+      "sources": [
+        {
+          "path": "src/index.ts",
+          "line": 555,
+          "end_line": 567,
+          "label": "session_start"
+        }
+      ]
+    },
+    {
+      "id": "reader",
+      "type": "backend",
+      "label": "Exports + viewer",
+      "sublabel": "any later reader",
+      "stage": 3,
+      "row": 0,
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 948,
+          "end_line": 951,
+          "label": "snapshotFrom"
+        }
+      ]
+    },
+    {
+      "id": "model",
+      "type": "backend",
+      "label": "Agent context",
+      "sublabel": "reads the transcript",
+      "stage": 3,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/redact-output.ts",
+          "line": 36,
+          "end_line": 36,
+          "label": "return content"
+        }
+      ]
+    },
+    {
+      "id": "manual",
+      "type": "external",
+      "label": "/fact-board-update",
+      "sublabel": "git-checkout: git pull --ff-only",
+      "stage": 3,
+      "row": 3,
+      "tag": "manual only",
+      "sources": [
+        {
+          "path": "src/update-check.ts",
+          "line": 111,
+          "end_line": 127,
+          "label": "autoUpdateIfAvailable"
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "text-limit",
+      "from": "agentText",
+      "to": "limit",
+      "label": "text",
+      "classification": "untrusted",
+      "variant": "default"
+    },
+    {
+      "id": "limit-redact",
+      "from": "limit",
+      "to": "redact",
+      "label": "bounded text",
+      "classification": "untrusted",
+      "variant": "security"
+    },
+    {
+      "id": "cmd-redact",
+      "from": "cmdOut",
+      "to": "redact",
+      "label": "output chunks",
+      "classification": "may hold secrets",
+      "variant": "security"
+    },
+    {
+      "id": "redact-board",
+      "from": "redact",
+      "to": "boardDb",
+      "label": "redacted text",
+      "classification": "stored",
+      "variant": "emphasis"
+    },
+    {
+      "id": "redact-transcript",
+      "from": "redact",
+      "to": "transcript",
+      "label": "rewritten chunks",
+      "classification": "shown",
+      "variant": "emphasis"
+    },
+    {
+      "id": "board-reader",
+      "from": "boardDb",
+      "to": "reader",
+      "label": "rows",
+      "classification": "read-only",
+      "variant": "dashed"
+    },
+    {
+      "id": "transcript-model",
+      "from": "transcript",
+      "to": "model",
+      "label": "tool result",
+      "classification": "redacted",
+      "variant": "default"
+    },
+    {
+      "id": "fetch-cache",
+      "from": "remote",
+      "to": "cache",
+      "label": "latest version",
+      "classification": "public",
+      "variant": "dashed"
+    },
+    {
+      "id": "cache-notice",
+      "from": "cache",
+      "to": "notice",
+      "label": "newer than current",
+      "classification": "semver compare",
+      "variant": "default"
+    },
+    {
+      "id": "remote-manual",
+      "from": "remote",
+      "to": "manual",
+      "label": "latest version",
+      "classification": "manual command",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Not a vault",
+      "items": [
+        "Regex catches common shapes, not arbitrary secrets",
+        "read, grep, glob and find output is never rewritten"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Quiet by design",
+      "items": [
+        "Only the daily check and /fact-board-update touch the network",
+        "The session notice never updates; only /fact-board-update runs git pull --ff-only, and only for git-checkout installs",
+        "FACT_BOARD_UPDATE_CHECK=0 turns off the daily check"
+      ]
+    }
+  ]
+}

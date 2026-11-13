@@ -1,0 +1,346 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "omp-cairn-blackboard: system overview",
+    "output": ".archify/docs-diagrams/01-overview.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/duhd/omp-cairn-blackboard.git",
+      "provider": "github",
+      "revision": "72a5a5efe96fe1fde42234066dd8dde5703985b5"
+    }
+  },
+  "components": [
+    {
+      "id": "agent",
+      "type": "external",
+      "label": "Controller agent",
+      "sublabel": "main omp session",
+      "pos": [
+        40,
+        140
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "icon": "person",
+      "sources": [
+        {
+          "path": "skills/cairn-search/SKILL.md",
+          "line": 28,
+          "end_line": 50,
+          "label": "Loop"
+        }
+      ]
+    },
+    {
+      "id": "workers",
+      "type": "external",
+      "label": "Worker subagents",
+      "sublabel": "one task per intent",
+      "pos": [
+        40,
+        340
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "icon": "person",
+      "sources": [
+        {
+          "path": "skills/cairn-search/SKILL.md",
+          "line": 37,
+          "end_line": 42,
+          "label": "Explore step"
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "type": "backend",
+      "label": "17 board tools",
+      "sublabel": "xd:// + zod params",
+      "pos": [
+        290,
+        240
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "run() maps BoardError",
+      "sources": [
+        {
+          "path": "src/index.ts",
+          "line": 126,
+          "end_line": 138,
+          "label": "run()"
+        }
+      ]
+    },
+    {
+      "id": "board",
+      "type": "backend",
+      "label": "Board",
+      "sublabel": "all domain rules",
+      "pos": [
+        540,
+        240
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "write() = BEGIN IMMEDIATE",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 274,
+          "end_line": 311,
+          "label": "Board class"
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "SQLite (WAL)",
+      "sublabel": "fact-board.db + fact-boards/*.db",
+      "pos": [
+        860,
+        240
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 152,
+          "end_line": 197,
+          "label": "SCHEMA"
+        }
+      ]
+    },
+    {
+      "id": "hooks",
+      "type": "messagebus",
+      "label": "Session hooks",
+      "sublabel": "tool_call / compacting / start",
+      "pos": [
+        290,
+        40
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "advice only",
+      "sources": [
+        {
+          "path": "src/index.ts",
+          "line": 475,
+          "end_line": 553,
+          "label": "tool_call"
+        }
+      ]
+    },
+    {
+      "id": "viewer",
+      "type": "frontend",
+      "label": "/fact-board viewer",
+      "sublabel": "Bun.serve 127.0.0.1:8799, in-process",
+      "pos": [
+        540,
+        440
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/viewer.ts",
+          "line": 1235,
+          "end_line": 1258,
+          "label": "startViewer"
+        }
+      ]
+    },
+    {
+      "id": "redact",
+      "type": "security",
+      "label": "redactText",
+      "sublabel": "regex, before store",
+      "pos": [
+        290,
+        440
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "best-effort",
+      "sources": [
+        {
+          "path": "src/redact.ts",
+          "line": 84,
+          "end_line": 86,
+          "label": "redactText"
+        }
+      ]
+    },
+    {
+      "id": "github",
+      "type": "cloud",
+      "label": "GitHub raw",
+      "sublabel": "package.json on main",
+      "pos": [
+        860,
+        40
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/update-check.ts",
+          "line": 15,
+          "label": "REMOTE_PACKAGE_URL"
+        }
+      ]
+    },
+    {
+      "id": "browser",
+      "type": "frontend",
+      "label": "Browser",
+      "sublabel": "polls /api/board",
+      "pos": [
+        860,
+        440
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "icon": "frontend",
+      "sources": [
+        {
+          "path": "src/viewer.ts",
+          "line": 1147,
+          "end_line": 1152,
+          "label": "poll"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "omp process (Bun)",
+      "wraps": [
+        "hooks",
+        "tools",
+        "board",
+        "redact",
+        "viewer"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "agent-tools",
+      "from": "agent",
+      "to": "tools",
+      "label": "reason / intent / fact",
+      "variant": "emphasis"
+    },
+    {
+      "id": "workers-tools",
+      "from": "workers",
+      "to": "tools",
+      "label": "claim / conclude",
+      "variant": "emphasis"
+    },
+    {
+      "id": "tools-board",
+      "from": "tools",
+      "to": "board",
+      "label": "camelCase args"
+    },
+    {
+      "id": "board-db",
+      "from": "board",
+      "to": "db",
+      "label": "sole writer"
+    },
+    {
+      "id": "redact-board",
+      "from": "redact",
+      "to": "board",
+      "label": "redact text",
+      "variant": "security"
+    },
+    {
+      "id": "hooks-agent",
+      "from": "hooks",
+      "to": "agent",
+      "label": "nudge / dispatch",
+      "variant": "dashed"
+    },
+    {
+      "id": "hooks-github",
+      "from": "hooks",
+      "to": "github",
+      "label": "daily check",
+      "variant": "dashed"
+    },
+    {
+      "id": "db-viewer",
+      "from": "db",
+      "to": "viewer",
+      "label": "read-only",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "right"
+    },
+    {
+      "id": "viewer-browser",
+      "from": "viewer",
+      "to": "browser",
+      "label": "HTTP, GET only"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Single writer",
+      "items": [
+        "Board is the only SQLite writer; every mutation runs in one immediate transaction",
+        "Rules live in board.ts, not in prompts; the viewer opens the file read-only"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Trust boundary",
+      "items": [
+        "Text is redacted before it is stored",
+        "Viewer is loopback-only and never selects lease tokens"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Advice, not control",
+      "items": [
+        "Hooks send messages to the main session",
+        "They never spawn workers or block a tool call"
+      ]
+    }
+  ]
+}
