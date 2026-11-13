@@ -198,44 +198,48 @@ const PAGE = `<!doctype html>
   color-scheme:light dark;
   --font-sans:ui-sans-serif,-apple-system,"Segoe UI Variable Text","Segoe UI","Helvetica Neue",Arial,sans-serif;
   --font-mono:ui-monospace,"Cascadia Mono","SF Mono",Consolas,monospace;
-  --bg:oklch(0.982 0.004 265);
-  --surface:oklch(0.997 0.002 265);
-  --surface-2:oklch(0.956 0.006 265);
-  --fg:oklch(0.24 0.02 265);
-  --muted:oklch(0.45 0.016 265);
-  --faint:oklch(0.53 0.014 265);
-  --border:oklch(0.90 0.008 265);
-  --border-2:oklch(0.82 0.012 265);
-  --accent:oklch(0.50 0.17 268);
-  --accent-soft:oklch(0.945 0.03 268);
-  --ok:oklch(0.50 0.13 152);
-  --warn:oklch(0.49 0.12 68);
-  --bad:oklch(0.51 0.19 25);
-  --focus:oklch(0.58 0.17 268);
-  --r:10px;
-  --r-sm:7px;
+  --bg:oklch(0.985 0.003 260);
+  --surface:oklch(1 0 0);
+  --surface-2:oklch(0.965 0.005 260);
+  --fg:oklch(0.20 0.02 260);
+  --muted:oklch(0.42 0.02 260);
+  --faint:oklch(0.58 0.015 260);
+  --border:oklch(0.91 0.006 260);
+  --border-2:oklch(0.84 0.01 260);
+  --accent:oklch(0.52 0.19 265);
+  --accent-soft:oklch(0.95 0.035 265);
+  --ok:oklch(0.52 0.14 150);
+  --warn:oklch(0.58 0.14 70);
+  --bad:oklch(0.52 0.20 25);
+  --focus:oklch(0.52 0.19 265);
+  --r:12px;
+  --r-sm:8px;
   --r-pill:999px;
-  --dur:150ms;
-  --ease:cubic-bezier(0.25,1,0.5,1);
-  --shadow-pop:0 8px 24px oklch(0.24 0.02 265 / 0.14);
+  --dur:160ms;
+  --ease:cubic-bezier(0.16,1,0.3,1);
+  --shadow-sm:0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md:0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 6px -2px rgb(0 0 0 / 0.04);
+  --shadow-pop:0 12px 28px -4px oklch(0.20 0.02 260 / 0.16);
 }
 @media(prefers-color-scheme:dark){
   :root{
-    --bg:oklch(0.185 0.012 265);
-    --surface:oklch(0.225 0.014 265);
-    --surface-2:oklch(0.268 0.016 265);
-    --fg:oklch(0.93 0.007 265);
-    --muted:oklch(0.78 0.013 265);
-    --faint:oklch(0.68 0.013 265);
-    --border:oklch(0.30 0.014 265);
-    --border-2:oklch(0.38 0.016 265);
-    --accent:oklch(0.74 0.14 268);
-    --accent-soft:oklch(0.32 0.05 268);
-    --ok:oklch(0.76 0.14 155);
-    --warn:oklch(0.81 0.13 75);
-    --bad:oklch(0.73 0.16 25);
-    --focus:oklch(0.80 0.13 268);
-    --shadow-pop:0 8px 24px oklch(0 0 0 / 0.5);
+    --bg:oklch(0.15 0.015 260);
+    --surface:oklch(0.19 0.018 260);
+    --surface-2:oklch(0.24 0.02 260);
+    --fg:oklch(0.95 0.005 260);
+    --muted:oklch(0.74 0.015 260);
+    --faint:oklch(0.55 0.015 260);
+    --border:oklch(0.27 0.02 260);
+    --border-2:oklch(0.35 0.022 260);
+    --accent:oklch(0.72 0.16 265);
+    --accent-soft:oklch(0.26 0.06 265);
+    --ok:oklch(0.74 0.15 150);
+    --warn:oklch(0.78 0.15 70);
+    --bad:oklch(0.70 0.19 25);
+    --focus:oklch(0.75 0.16 265);
+    --shadow-sm:0 1px 2px 0 rgb(0 0 0 / 0.3);
+    --shadow-md:0 4px 14px -2px rgb(0 0 0 / 0.4);
+    --shadow-pop:0 14px 32px -4px oklch(0 0 0 / 0.65);
   }
 }
 *{box-sizing:border-box}
@@ -357,15 +361,15 @@ main{padding:24px 24px 64px;max-width:1440px;margin:0 auto}
 .gbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:24px 0 12px}
 .legend{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
 .legend span{display:inline-flex;align-items:center;gap:5px}
-.legend i{display:inline-block;width:14px;height:9px;border:1.5px solid var(--border-2);border-radius:2px}
-.legend .lo{border-color:var(--fg)}
-.legend .li{border-color:var(--accent);border-radius:4px}
-.legend .lc{border-color:var(--ok);border-radius:4px}
+.legend i{display:inline-block;width:14px;height:9px;border:1.5px solid var(--border-2);border-radius:3px}
+.legend .lo{border-color:var(--fg);background:color-mix(in oklch,var(--fg) 8%,transparent)}
+.legend .li{border-color:var(--accent);border-radius:4px;background:color-mix(in oklch,var(--accent) 10%,transparent)}
+.legend .lc{border-color:var(--ok);border-radius:4px;background:color-mix(in oklch,var(--ok) 12%,transparent)}
 .legend .ld{border-color:var(--faint);border-radius:4px}
-.legend .lf{border-color:var(--ok)}
-.legend .lx{border-color:var(--bad);border-style:dashed}
-.legend .lg{border-color:var(--warn)}
-#graph{display:block;width:100%;height:calc(100vh - 520px);min-height:360px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);cursor:grab;touch-action:none;user-select:none}
+.legend .lf{border-color:var(--ok);background:color-mix(in oklch,var(--ok) 8%,transparent)}
+.legend .lx{border-color:var(--bad);border-style:dashed;background:color-mix(in oklch,var(--bad) 8%,transparent)}
+.legend .lg{border-color:var(--warn);background:color-mix(in oklch,var(--warn) 10%,transparent)}
+#graph{display:block;width:100%;height:calc(100vh - 220px);min-height:540px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);cursor:grab;touch-action:none;user-select:none;box-shadow:var(--shadow-sm);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:24px 24px}
 #graph.dragging{cursor:grabbing}
 .cov-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:16px}
 .cov-card{padding:14px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);display:flex;flex-direction:column;gap:8px}
@@ -376,26 +380,40 @@ main{padding:24px 24px 64px;max-width:1440px;margin:0 auto}
 .cov-badge.claimed{background:color-mix(in oklch,var(--accent) 18%,var(--surface));color:var(--accent)}
 .cov-badge.disputed{background:color-mix(in oklch,var(--bad) 18%,var(--surface));color:var(--bad)}
 #arrow path{fill:var(--border-2)}
-.edge{fill:none;stroke:var(--border-2);stroke-width:1.5}
-.edge.back{stroke-dasharray:5 4}
-.edge.hl{stroke:var(--accent);stroke-width:2.5}
-.edge.dim{opacity:.1}
-.gnode{cursor:pointer}
-.gnode rect{fill:var(--surface);stroke:var(--border-2);stroke-width:1.5}
-.gnode text{fill:var(--fg);font:12px var(--font-sans)}
-.gnode text.k{fill:var(--faint);font-family:var(--font-mono);font-size:10px;letter-spacing:.06em}
-.gnode text.l{font-size:12px}
-.gnode text.o{fill:var(--muted);font-size:11px}
-.gnode.origin rect{stroke:var(--fg)}
-.gnode.goal rect{stroke:var(--warn);stroke-dasharray:6 4}
-.gnode.reached rect{stroke:var(--warn);stroke-width:2;stroke-dasharray:none}
-.gnode.fact rect{stroke:var(--ok)}
-.gnode.fact.disputed rect{stroke:var(--bad);stroke-dasharray:4 3}
-.gnode.intent.open rect{stroke:var(--accent)}
-.gnode.intent.claimed rect{stroke:var(--ok);fill:color-mix(in oklch,var(--ok) 8%,var(--surface))}
-.gnode.intent.concluded rect{stroke:var(--faint)}
-.gnode.stale rect,.gnode.intent.claimed.stale rect{stroke:var(--bad);stroke-dasharray:3 3}
-.gnode.hl rect{stroke-width:3}
+.edge{fill:none;stroke:var(--border-2);stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;transition:stroke var(--dur) var(--ease),stroke-width var(--dur) var(--ease)}
+.edge.back{stroke-dasharray:6 5}
+.edge.main{stroke:var(--ok);stroke-width:3.5}
+#arrow-main path{fill:var(--ok)}
+.edge.hl{stroke:var(--accent);stroke-width:2.75}
+.edge.dim{opacity:.12}
+.gnode{cursor:pointer;transition:transform var(--dur) var(--ease),filter var(--dur) var(--ease)}
+.gnode rect.bg{fill:var(--surface);stroke:var(--border-2);stroke-width:1.5;rx:10px;filter:drop-shadow(0 2px 5px rgb(0 0 0 / 0.05))}
+.gnode rect.hdr{fill:var(--surface-2);opacity:.75}
+.gnode line.sep{stroke:var(--border);stroke-width:1}
+.gnode circle.dot{r:3.5}
+.gnode text{fill:var(--fg);font:12px/1.2 var(--font-sans);font-weight:500}
+.gnode text.k{fill:var(--muted);font-family:var(--font-mono);font-size:9.5px;font-weight:700;letter-spacing:.06em}
+.gnode text.l{font-size:12px;font-weight:600}
+.gnode text.o{fill:var(--muted);font-size:10.5px;font-family:var(--font-mono)}
+.gnode.origin rect.bg{stroke:var(--fg);stroke-width:2}
+.gnode.origin circle.dot{fill:var(--fg)}
+.gnode.goal rect.bg{stroke:var(--warn);stroke-dasharray:5 4;stroke-width:1.75}
+.gnode.goal circle.dot{fill:var(--warn)}
+.gnode.reached rect.bg{stroke:var(--warn);stroke-width:2.25;stroke-dasharray:none}
+.gnode.reached circle.dot{fill:var(--warn)}
+.gnode.fact rect.bg{stroke:var(--ok);stroke-width:1.75}
+.gnode.fact circle.dot{fill:var(--ok)}
+.gnode.fact.disputed rect.bg{stroke:var(--bad);stroke-dasharray:4 3}
+.gnode.fact.disputed circle.dot{fill:var(--bad)}
+.gnode.intent.open rect.bg{stroke:var(--accent);stroke-width:1.75}
+.gnode.intent.open circle.dot{fill:var(--accent)}
+.gnode.intent.claimed rect.bg{stroke:var(--ok);stroke-width:2}
+.gnode.intent.claimed circle.dot{fill:var(--ok)}
+.gnode.intent.concluded rect.bg{stroke:var(--border-2);opacity:.9}
+.gnode.intent.concluded circle.dot{fill:var(--faint)}
+.gnode.stale rect.bg,.gnode.intent.claimed.stale rect.bg{stroke:var(--bad);stroke-dasharray:3 3}
+.gnode.stale circle.dot{fill:var(--bad)}
+.gnode.hl rect.bg{stroke-width:2.5;filter:drop-shadow(0 4px 14px color-mix(in oklch,var(--accent) 35%,transparent))}
 .gnode.dim{opacity:.15}
 @media(max-width:1040px){.workspace{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:760px){
@@ -478,6 +496,7 @@ main{padding:24px 24px 64px;max-width:1440px;margin:0 auto}
   <div id="graphView" hidden>
     <div class="gbar">
       <button id="fit" class="control" type="button">Fit</button>
+      <button id="toggleCollapse" class="control" type="button" aria-pressed="false">Collapse Done</button>
       <span class="legend">
         <span><i class="lo"></i>origin</span><span><i class="li"></i>intent open</span><span><i class="lc"></i>claimed</span>
         <span><i class="ld"></i>concluded</span><span><i class="lf"></i>fact</span><span><i class="lx"></i>disputed or lease expired</span>
@@ -499,11 +518,10 @@ main{padding:24px 24px 64px;max-width:1440px;margin:0 auto}
 </main>
 <script>
 var params = new URLSearchParams(location.search);
-var state = { paused: false, filter: "", first: true, data: null, seen: {}, project: params.get("project") || "", view: params.get("view") === "graph" ? "graph" : "list", showDone: false };
+var state = { paused: false, filter: "", first: true, data: null, seen: {}, project: params.get("project") || "", view: params.get("view") === "graph" ? "graph" : "list", showDone: false, collapsed: false };
 var SVGNS = "http://www.w3.org/2000/svg";
 var gs = { sig: "", view: null, bounds: null, moved: false, nw: 220, nh: 58 };
 var graphEl = document.getElementById("graph");
-
 function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function svg(tag, attrs, text) {
   var e = document.createElementNS(SVGNS, tag);
@@ -729,15 +747,72 @@ function renderList(d) {
 }
 
 function renderGraph(d) {
-  var graph = d.graph, meta = document.getElementById("gmeta");
-  if (!graph || !graph.nodes.length) { graphEl.replaceChildren(); gs.sig = ""; gs.bounds = null; meta.textContent = d.note || "Nothing to draw yet."; return; }
+  var rawGraph = d.graph, meta = document.getElementById("gmeta");
+  if (!rawGraph || !rawGraph.nodes.length) { graphEl.replaceChildren(); gs.sig = ""; gs.bounds = null; meta.textContent = d.note || "Nothing to draw yet."; return; }
+  var graph = state.collapsed ? collapseGraph(rawGraph) : rawGraph;
   gs.nw = graph.nodeWidth; gs.nh = graph.nodeHeight;
-  var sig = JSON.stringify([graph.nodes.map(function (n) { return [n.id, n.status, n.stale, n.owner, n.x, n.y]; }), graph.edges]);
+  var sig = JSON.stringify([state.collapsed, graph.nodes.map(function (n) { return [n.id, n.status, n.stale, n.owner, n.x, n.y]; }), graph.edges, graph.mainPath || []]);
   if (sig !== gs.sig) { drawGraph(graph); gs.sig = sig; }
   applyFilter(graph);
   meta.textContent = (d.truncated ? "PARTIAL: only the newest " + d.limit + " facts and " + d.limit + " intents; older nodes and their edges are hidden · " : "")
     + graph.nodes.length + " nodes · " + graph.edges.length + " edges · scroll to zoom, drag to pan, click a node to open its card";
   meta.title = meta.textContent;
+}
+
+function collapseGraph(graph) {
+  var nw = graph.nodeWidth, nh = graph.nodeHeight, gap = 80, pad = 24;
+  var nodes = graph.nodes;
+  var keepSet = {};
+  nodes.forEach(function (n, idx) {
+    if (n.kind === "origin" || n.kind === "goal" || n.status === "open" || n.status === "claimed" || n.status === "disputed" || n.stale || idx >= nodes.length - 6) {
+      keepSet[n.id] = true;
+    }
+  });
+  var hiddenCount = nodes.filter(function (n) { return !keepSet[n.id]; }).length;
+  if (hiddenCount < 4) return graph;
+
+  var clusterId = "_cluster_concluded";
+  var clusterNode = {
+    id: clusterId,
+    kind: "intent",
+    status: "concluded",
+    label: "✓ " + hiddenCount + " concluded milestones folded",
+    owner: "click to expand",
+    stale: false,
+    layer: 1,
+    x: 0,
+    y: 0
+  };
+
+  var finalNodes = [];
+  var clusterAdded = false;
+  nodes.forEach(function (n) {
+    if (keepSet[n.id]) {
+      finalNodes.push({ id: n.id, kind: n.kind, status: n.status, label: n.label, owner: n.owner, stale: n.stale, layer: n.layer, x: n.x, y: n.y });
+    } else if (!clusterAdded) {
+      clusterAdded = true;
+      finalNodes.push(clusterNode);
+    }
+  });
+
+  finalNodes.forEach(function (n, idx) {
+    n.x = pad + idx * (nw + gap);
+    n.y = pad + 40;
+  });
+
+  var finalEdges = [];
+  for (var i = 0; i < finalNodes.length - 1; i++) {
+    finalEdges.push({ from: finalNodes[i].id, to: finalNodes[i + 1].id });
+  }
+
+  return {
+    nodes: finalNodes,
+    edges: finalEdges,
+    nodeWidth: nw,
+    nodeHeight: nh,
+    width: pad * 2 + finalNodes.length * nw + (finalNodes.length - 1) * gap,
+    height: pad * 2 + nh + 80
+  };
 }
 
 function drawGraph(graph) {
@@ -747,26 +822,51 @@ function drawGraph(graph) {
   var defs = svg("defs");
   var marker = svg("marker", { id: "arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" });
   marker.appendChild(svg("path", { d: "M0,0 L10,5 L0,10 z" }));
-  defs.appendChild(marker); graphEl.appendChild(defs);
+  var markerMain = svg("marker", { id: "arrow-main", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" });
+  markerMain.appendChild(svg("path", { d: "M0,0 L10,5 L0,10 z" }));
+  defs.appendChild(marker); defs.appendChild(markerMain); graphEl.appendChild(defs);
   var edgeLayer = svg("g"), nodeLayer = svg("g");
-  graph.edges.forEach(function (e) {
+  // The main route runs origin to goal. Its edges are drawn last so no other edge crosses over them.
+  var mainKeys = {}, mp = graph.mainPath || [];
+  for (var m = 0; m + 1 < mp.length; m++) mainKeys[mp[m] + ">" + mp[m + 1]] = true;
+  var isMain = function (e) { return mainKeys[e.from + ">" + e.to] === true; };
+  graph.edges.filter(function (e) { return !isMain(e); }).concat(graph.edges.filter(isMain)).forEach(function (e) {
     var a = pos[e.from], b = pos[e.to];
     if (!a || !b) return;
-    var x1 = a.x + nw, y1 = a.y + nh / 2, x2 = b.x, y2 = b.y + nh / 2, back = b.x <= a.x;
-    var d = back
-      ? "M" + x1 + "," + y1 + " C" + (x1 + 70) + "," + (y1 + nh * 1.6) + " " + (x2 - 70) + "," + (y2 + nh * 1.6) + " " + x2 + "," + y2
-      : "M" + x1 + "," + y1 + " C" + (x1 + 45) + "," + y1 + " " + (x2 - 45) + "," + y2 + " " + x2 + "," + y2;
-    edgeLayer.appendChild(svg("path", { d: d, "class": "edge" + (back ? " back" : ""), "data-from": e.from, "data-to": e.to, "marker-end": "url(#arrow)" }));
+    var isBack = a.layer >= b.layer;
+    var x1 = a.x + nw / 2, y1 = a.y + nh;
+    var x2 = b.x + nw / 2, y2 = b.y;
+    var d = "";
+    if (isBack) {
+      // Loop or back-edge curves outward to the right
+      var loopX = Math.max(a.x, b.x) + nw + 60;
+      d = "M" + (a.x + nw) + "," + (a.y + nh / 2) + " C" + loopX + "," + (a.y + nh / 2) + " " + loopX + "," + (b.y + nh / 2) + " " + (b.x + nw) + "," + (b.y + nh / 2);
+    } else {
+      // Natural top-down cubic bezier curve from bottom of parent to top of child
+      var dy = Math.max(20, (y2 - y1) * 0.5);
+      d = "M" + x1 + "," + y1 + " C" + x1 + "," + (y1 + dy) + " " + x2 + "," + (y2 - dy) + " " + x2 + "," + y2;
+    }
+    var main = isMain(e);
+    edgeLayer.appendChild(svg("path", { d: d, "class": "edge" + (isBack ? " back" : "") + (main ? " main" : ""), "data-from": e.from, "data-to": e.to, "marker-end": main ? "url(#arrow-main)" : "url(#arrow)" }));
   });
   graph.nodes.forEach(function (n) {
     var grp = svg("g", { "class": "gnode " + n.kind + " " + n.status + (n.stale ? " stale" : ""), transform: "translate(" + n.x + "," + n.y + ")", "data-id": n.id });
     grp.appendChild(svg("title", null, n.label));
-    grp.appendChild(svg("rect", { width: nw, height: nh, rx: n.kind === "intent" ? 14 : n.kind === "fact" ? 4 : 22 }));
+    // Card container
+    grp.appendChild(svg("rect", { "class": "bg", width: nw, height: nh, rx: 10 }));
+    // Header area (22px high)
+    grp.appendChild(svg("rect", { "class": "hdr", x: 1, y: 1, width: nw - 2, height: 21, rx: 9 }));
+    grp.appendChild(svg("line", { "class": "sep", x1: 1, y1: 22, x2: nw - 1, y2: 22 }));
+    // Status indicator dot
+    grp.appendChild(svg("circle", { "class": "dot", cx: 12, cy: 11 }));
+    // Kind label in header
     var kind = n.kind === "origin" ? "ORIGIN" : n.kind === "goal" ? (n.status === "reached" ? "GOAL · REACHED" : "GOAL")
       : (n.kind + " · " + n.status + (n.stale ? " · LEASE EXPIRED" : "")).toUpperCase();
-    grp.appendChild(svg("text", { x: 12, y: 17, "class": "k" }, kind));
-    grp.appendChild(svg("text", { x: 12, y: 35, "class": "l" }, clip(n.label, 30)));
-    if (n.owner) grp.appendChild(svg("text", { x: 12, y: 50, "class": "o" }, clip(n.owner, 32)));
+    grp.appendChild(svg("text", { x: 22, y: 15, "class": "k" }, kind));
+    // Owner on right of header
+    if (n.owner) grp.appendChild(svg("text", { x: nw - 10, y: 15, "class": "o", "text-anchor": "end" }, clip(n.owner, 16)));
+    // Main label body
+    grp.appendChild(svg("text", { x: 12, y: 41, "class": "l" }, clip(n.label, 28)));
     grp.addEventListener("mouseenter", function () { highlight(n.id, true); });
     grp.addEventListener("mouseleave", function () { highlight(n.id, false); });
     nodeLayer.appendChild(grp);
@@ -792,7 +892,16 @@ function applyFilter(graph) {
   graphEl.querySelectorAll(".edge").forEach(function (e) { e.classList.toggle("dim", !(keep[e.getAttribute("data-from")] || keep[e.getAttribute("data-to")])); });
 }
 function applyViewBox(v) { gs.view = v; graphEl.setAttribute("viewBox", v.x + " " + v.y + " " + v.w + " " + v.h); }
-function fit() { var b = gs.bounds; if (!b) return; gs.moved = false; applyViewBox({ x: b.x, y: b.y, w: Math.max(b.w, 1), h: Math.max(b.h, 1) }); }
+function fit() {
+  var b = gs.bounds; if (!b) return; gs.moved = false;
+  var rect = graphEl.getBoundingClientRect();
+  var aspect = rect.width && rect.height ? rect.width / rect.height : 2;
+  // Top-down tree: fit width cleanly with comfortable padding
+  var fitW = Math.max(b.w + 80, 600);
+  var fitH = fitW / aspect;
+  // If tree is very tall, focus viewport on the top root or active bottom
+  applyViewBox({ x: Math.max(0, b.x - 40), y: Math.max(0, b.y - 20), w: fitW, h: fitH });
+}
 function toGraph(cx, cy) {
   var m = graphEl.getScreenCTM(); if (!m) return { x: 0, y: 0 };
   var p = graphEl.createSVGPoint(); p.x = cx; p.y = cy;
@@ -1098,9 +1207,17 @@ document.getElementById("tokenRefresh").onclick = function (e) {
   e.stopPropagation();
   pollTelemetry();
 };
+var tcBtn = document.getElementById("toggleCollapse");
+if (tcBtn) {
+  tcBtn.onclick = function () {
+    state.collapsed = !state.collapsed;
+    tcBtn.setAttribute("aria-pressed", String(state.collapsed));
+    tcBtn.textContent = state.collapsed ? "Expand Done" : "Collapse Done";
+    gs.sig = "";
+    if (state.data) renderGraph(state.data);
+  };
+}
 </script></body></html>`;
-
-// The page is one inline script. The CSP allows exactly that script by hash, so injected markup cannot run, and
 // nothing loads from or connects to another origin. The hash is computed from PAGE, so it cannot drift from it.
 const PAGE_SCRIPT = PAGE.slice(PAGE.indexOf("<script>") + "<script>".length, PAGE.lastIndexOf("</script>"));
 const PAGE_CSP = [

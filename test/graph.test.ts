@@ -75,6 +75,20 @@ describe("graph layout", () => {
     expect(node(graph, "goal").layer).toBeGreaterThan(node(graph, completion.id).layer);
   });
 
+  test("the main route runs from the origin through the deepest chain to the goal", () => {
+    const board = newBoard();
+    board.init({ origin: "o", goal: "g" });
+    const shallow = explore(board, ["origin"], "side finding");
+    const first = explore(board, ["origin"], "pool size is 5");
+    const deep = explore(board, [first.fact.id], "pool exhausts at 50 rps");
+    expect(buildGraph(snapshotOf(board), Date.now()).mainPath).toEqual([]);
+
+    const completion = board.complete({ from: [shallow.fact.id, deep.fact.id], description: "done", worker: "controller" }).intent;
+    const graph = buildGraph(snapshotOf(board), Date.now());
+    expect(graph.mainPath).toEqual(["origin", first.intent.id, first.fact.id, deep.intent.id, deep.fact.id, completion.id, "goal"]);
+    expect(graph.mainPath).not.toContain(shallow.fact.id);
+  });
+
   test("an intent that dedupes onto a fact it grew from does not loop or drop nodes", () => {
     const board = newBoard();
     board.init({ origin: "o", goal: "g" });
@@ -119,7 +133,8 @@ describe("graph layout", () => {
     for (const a of graph.nodes) {
       for (const b of graph.nodes) {
         if (a === b || a.layer !== b.layer) continue;
-        expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(graph.nodeHeight);
+        // In top-down tree layout, siblings within the same layer share the same Y rank and are separated horizontally
+        expect(Math.abs(a.x - b.x)).toBeGreaterThanOrEqual(graph.nodeWidth);
       }
     }
   });
