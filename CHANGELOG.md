@@ -1,11 +1,12 @@
 # Changelog
 
-## 0.9.2 — 2026-11-13
+## 0.9.3 — 2026-11-13
 
 ### Fixed
 
 - **Full Intent UUID in Dispatch Advice**: `dispatchAdvice` emits complete UUIDs for open intents instead of truncating to 8 characters, preventing `intent not found` errors when workers claim intents directly.
 - **Mutating Command Safety Gate**: Added a guard in the `tool_call` hook alerting when system-changing commands (`helm upgrade`, `kubectl apply/scale/delete/rollout restart`, `git push main/master`) are run without an active claimed intent on the board.
+- **Marketplace Manifest Sync**: Synchronized plugin manifest (`marketplace.json`) and project documentation (`AGENTS.md`) with release versioning.
 
 ## 0.9.1 — 2026-11-12
 
