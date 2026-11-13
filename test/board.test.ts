@@ -1031,18 +1031,29 @@ describe("Tier 1 improvements: safe prefix resolution & provenance", () => {
     board.claimIntent(i1.id, "worker-alpha");
     board.claimIntent(i2.id, "worker-beta");
 
-    // Refresh owned by alpha should not affect beta
-    expect(board.refreshOwnedHeartbeat("worker-alpha")).toBe(false); // throttled because heartbeat is fresh (< leaseMs/3 old)
+    const db = (board as unknown as { db: { query: <T, P extends unknown[]>(sql: string) => { run: (...args: unknown[]) => void; get: (...args: unknown[]) => T } } }).db;
 
-    // Manually age the heartbeat
-    (board as unknown as { db: { query: (sql: string) => { run: (...args: unknown[]) => void } } }).db
-      .query("UPDATE intents SET heartbeat_at = ? WHERE id = ?")
-      .run(Date.now() - 400_000, i1.id);
+    // Both heartbeats are initially fresh (< leaseMs/3 old)
+    expect(board.refreshOwnedHeartbeat("worker-alpha")).toBe(false);
+    expect(board.refreshOwnedHeartbeat("worker-beta")).toBe(false);
 
-    // Now worker-alpha can refresh its aged heartbeat
+    // Manually age BOTH heartbeats to 400s ago
+    const oldTime = Date.now() - 400_000;
+    db.query("UPDATE intents SET heartbeat_at = ? WHERE id IN (?, ?)").run(oldTime, i1.id, i2.id);
+
+    // Calling refresh for worker-alpha MUST refresh i1 but leave i2 untouched
     expect(board.refreshOwnedHeartbeat("worker-alpha")).toBe(true);
-    // Calling for another worker does not refresh beta if beta is fresh
-    expect(board.refreshOwnedHeartbeat("worker-other")).toBe(false);
+
+    const row1 = db.query<{ heartbeat_at: number }, [string]>("SELECT heartbeat_at FROM intents WHERE id = ?").get(i1.id);
+    const row2 = db.query<{ heartbeat_at: number }, [string]>("SELECT heartbeat_at FROM intents WHERE id = ?").get(i2.id);
+
+    expect(row1.heartbeat_at).toBeGreaterThan(oldTime);
+    expect(row2.heartbeat_at).toBe(oldTime); // i2 MUST NOT be updated by worker-alpha
+
+    // Calling for an unrelated worker updates neither
+    expect(board.refreshOwnedHeartbeat("worker-unknown")).toBe(false);
+    const row2After = db.query<{ heartbeat_at: number }, [string]>("SELECT heartbeat_at FROM intents WHERE id = ?").get(i2.id);
+    expect(row2After.heartbeat_at).toBe(oldTime);
   });
 
 });
