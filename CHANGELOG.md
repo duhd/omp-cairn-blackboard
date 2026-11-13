@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.5 — 2026-11-13
+
+### Fixed
+
+- **Update hint for `github:` installs**: `/fact-board-update` now suggests `omp plugin install github:duhd/omp-cairn-blackboard` instead of `omp plugin upgrade`, which failed on a machine with a stale marketplace record. A fresh `install` resets enablement and features; the README says so.
+
 ## 0.9.4 — 2026-11-13
 
 ### Added

@@ -31,7 +31,7 @@ describe("update check", () => {
   test("a newer remote suggests the command for the install kind", async () => {
     const { fetchImpl } = remote("0.4.0");
     const at = (install: Parameters<typeof checkForUpdate>[0]["install"]) => checkForUpdate({ current: "0.3.1", cachePath: cachePath(), install, fetchImpl });
-    expect(await at({ kind: "package" })).toContain("0.4.0 is available (installed 0.3.1). To update, run `omp plugin upgrade omp-cairn-blackboard`,");
+    expect(await at({ kind: "package" })).toContain("0.4.0 is available (installed 0.3.1). To update, run `omp plugin install github:duhd/omp-cairn-blackboard`,");
     expect(await at({ kind: "marketplace", marketplace: "duhd" })).toContain("`omp plugin marketplace update duhd` then `omp plugin upgrade omp-cairn-blackboard@duhd`");
     expect(await at({ kind: "git-checkout" })).toContain("run `git pull` in ");
   });

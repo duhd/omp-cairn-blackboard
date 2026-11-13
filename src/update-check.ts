@@ -102,7 +102,7 @@ export async function checkForUpdate(options: UpdateCheckOptions): Promise<strin
       ? `run \`git pull\` in ${PLUGIN_ROOT}`
       : options.install.kind === "marketplace"
         ? `run \`omp plugin marketplace update ${options.install.marketplace}\` then \`omp plugin upgrade ${PLUGIN_NAME}@${options.install.marketplace}\``
-        : `run \`omp plugin upgrade ${PLUGIN_NAME}\``;
+        : `run \`omp plugin install github:duhd/${PLUGIN_NAME}\``;
   return `omp-cairn-blackboard ${cache.latest} is available (installed ${options.current}). To update, ${how}, then quit omp fully and start it again. Changes: ${CHANGELOG_URL}`;
 }
 /**
@@ -129,7 +129,7 @@ export async function autoUpdateIfAvailable(options: UpdateCheckOptions): Promis
 /**
  * How this copy was installed, read from where it sits. A marketplace install lives in a cache directory named
  * `<marketplace>___<plugin>___<version>` and upgrades as `name@marketplace`; a linked git checkout cannot be
- * upgraded by omp and needs `git pull`; anything else is a `github:`/npm install that `omp plugin upgrade` handles.
+ * upgraded by omp and needs `git pull`; anything else is a `github:`/npm install, updated by a fresh `install`.
  */
 export function installKindOf(root: string, hasGit: boolean): InstallKind {
   const dir = root.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";

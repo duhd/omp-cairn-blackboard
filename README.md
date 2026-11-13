@@ -62,7 +62,7 @@ When a main session starts, the plugin compares its version with `package.json` 
 | Installed with | Suggested command |
 |---|---|
 | marketplace | `omp plugin marketplace update <marketplace>` then `omp plugin upgrade omp-cairn-blackboard@<marketplace>` |
-| `github:` | `omp plugin upgrade omp-cairn-blackboard` (keeps enablement and features; a fresh `install` resets them) |
+| `github:` | `omp plugin install github:duhd/omp-cairn-blackboard` (a fresh `install` resets enablement and features such as `redact-output`; re-enable them afterwards) |
 | `omp plugin link` of a git checkout | `git pull` in the checkout |
 
 Offline or failed checks are silent. Set `FACT_BOARD_UPDATE_CHECK=0` to turn the check off. Release notes: [CHANGELOG.md](CHANGELOG.md).
