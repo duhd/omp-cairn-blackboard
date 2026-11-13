@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.6 — 2026-11-13
+
+### Added
+
+- **Main route on the graph**: `Graph.mainPath` is the longest chain from the origin to the goal, and the Graph view draws its edges thicker in the success colour above the other edges. It is empty until the board is completed.
+
+### Changed
+
+- **Graph layout**: nodes are laid out top-down (one layer per row) with larger cards and spacing.
+
 ## 0.9.5 — 2026-11-13
 
 ### Fixed
