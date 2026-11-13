@@ -26,8 +26,6 @@ export interface Checkpoint {
   announced: Record<string, true>;
 }
 
-/** Ids are shortened for the message; agents pass the full id, which board_export lists. */
-const shortId = (id: string): string => id.slice(0, 8);
 
 /**
  * Split intents into the dispatcher's counts, projecting an expired claim as reclaimable rather than held.
@@ -65,7 +63,7 @@ export function dispatchAdvice(cp: Checkpoint | undefined, now: GraphCounts, pro
   if (fresh.length > 0) {
     return {
       advice:
-        `Fact board dispatcher (${scope}): ${fresh.length} open intent(s) nobody has claimed: ${fresh.map(shortId).join(", ")}. ` +
+        `Fact board dispatcher (${scope}): ${fresh.length} open intent(s) nobody has claimed: ${fresh.join(", ")}. ` +
         "Run one task subagent per intent, in parallel, each with a unique worker name: intent_claim(id, worker), do the work, intent_conclude with the finding (or intent_release). Pass the project on every call.",
       next: { ...base, live: now.live, announced },
     };

@@ -481,6 +481,38 @@ export default function blackboard(pi: ExtensionAPI): void {
     const normalizedInput = isXd && "content" in rawInput && typeof rawInput.content === "string" ? (() => {
       try { return JSON.parse(rawInput.content); } catch { return rawInput; }
     })() : event.input;
+    // Mutating gate: guard system-changing commands (helm upgrade, kubectl apply/scale/delete, git push main)
+    if (normalizedTool === "bash" && normalizedInput && typeof normalizedInput === "object" && "command" in normalizedInput && typeof normalizedInput.command === "string") {
+      const cmd = normalizedInput.command;
+      const isMutating = /(?:helm\s+(?:--\S+\s+)*upgrade|kubectl\s+.*(?:apply|scale|delete|rollout\s+restart)|git\s+push\s+.*(?:main|master))/i.test(cmd);
+      if (isMutating) {
+        const activeProjects = shared.sessions.get(sessionId);
+        let hasClaimedIntent = false;
+        if (activeProjects) {
+          for (const p of activeProjects.keys()) {
+            try {
+              const board = boardFor(p);
+              if (board.info().status === "active" && board.activeClaimedIntentId()) {
+                hasClaimedIntent = true;
+                break;
+              }
+            } catch {}
+          }
+        }
+        if (!hasClaimedIntent) {
+          pi.sendMessage(
+            {
+              customType: "cairn-gate-warning",
+              display: true,
+              content:
+                "Fact board mutating gate warning: detected mutating command without an active claimed intent on the board. " +
+                "Rule: Declare and claim the intent BEFORE doing work that changes a system (deploy, rollback, scale, migration, push).",
+            },
+            { deliverAs: "aside" },
+          );
+        }
+      }
+    }
 
     recordToolUse(shared.sessions, sessionId, normalizedTool, normalizedInput);
     // Auto-anchor: infer target file path from tool calls (read, edit, write, bash)
