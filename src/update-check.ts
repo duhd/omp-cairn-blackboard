@@ -1,5 +1,6 @@
 /**
- * Tells the user when a newer version of this plugin is on GitHub, and how to get it. Suggests only; never updates.
+ * Tells the user when a newer version of this plugin is on GitHub, and how to get it. `checkForUpdate` only suggests;
+ * `autoUpdateIfAvailable`, reached only from the `/fact-board-update` command, runs `git pull --ff-only` for a git checkout.
  *
  * The source is `package.json` on `main`, because that is the ref `omp plugin upgrade` re-resolves for a git
  * install: a release or tag would not change what the upgrade fetches. raw.githubusercontent.com needs no token
