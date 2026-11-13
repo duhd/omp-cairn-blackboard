@@ -397,3 +397,19 @@ test("a Visibility Ladder sees one cairn provider per process, which collapses a
   a.toolCall({ toolName: "fact_claim", input: { text: "t", project: "ladder-p" } }, sessionOf("session-ladder"));
   expect(registry[0](block)).toBe(`→ fact ${claimed.id.slice(0, 12)} (board ladder-p): expiry check uses <`);
 });
+test("tool_call hook warns when mutating command runs without active claimed intent", async () => {
+  process.env.FACT_BOARD_DB = join(dir, "mutating-gate-board.db");
+  const { toolCall, tools, nudges } = await loadInstance("mutating-gate");
+  await tools.board_init.execute("mg1", { origin: "o", goal: "g", project: "mg-p" });
+
+  // Register project to session via initial read/write
+  toolCall({ toolName: "read", input: { path: "xd://board_list" } }, sessionOf("session-mutating"));
+
+  // Run mutating command without claimed intent
+  toolCall(
+    { toolName: "bash", input: { command: "helm --kubeconfig=temp upgrade litellm values.yaml" } },
+    sessionOf("session-mutating"),
+  );
+  expect(nudges.some(n => n.includes("mutating gate warning"))).toBe(true);
+});
+
