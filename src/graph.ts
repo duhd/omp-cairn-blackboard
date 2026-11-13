@@ -38,14 +38,15 @@ export interface Graph {
   nodeHeight: number;
   width: number;
   height: number;
+  /** Node ids from the origin to the goal along the main route; empty until the goal has a route back to the origin. */
+  mainPath: string[];
 }
 
-const NODE_WIDTH = 220;
+const NODE_WIDTH = 260;
 const NODE_HEIGHT = 58;
-const LAYER_GAP = 80;
-const ROW_GAP = 20;
-const PADDING = 24;
-
+const LAYER_V_GAP = 54;
+const SIBLING_H_GAP = 32;
+const PADDING = 32;
 type NodeInfo = Omit<GraphNode, "layer" | "x" | "y">;
 
 export function buildGraph(snapshot: Snapshot, now: number): Graph {
@@ -87,7 +88,7 @@ export function buildGraph(snapshot: Snapshot, now: number): Graph {
 
   const ids = [...info.keys()];
   if (ids.length === 0) {
-    return { nodes: [], edges, nodeWidth: NODE_WIDTH, nodeHeight: NODE_HEIGHT, width: 0, height: 0 };
+    return { nodes: [], edges, mainPath: [], nodeWidth: NODE_WIDTH, nodeHeight: NODE_HEIGHT, width: 0, height: 0 };
   }
 
   const preds = new Map<string, string[]>(ids.map(id => [id, []]));
@@ -102,6 +103,7 @@ export function buildGraph(snapshot: Snapshot, now: number): Graph {
     const others = ids.filter(id => id !== GOAL).map(id => layer.get(id) ?? 0);
     layer.set(GOAL, Math.max(layer.get(GOAL) ?? 0, others.length > 0 ? Math.max(...others) + 1 : 0));
   }
+  const mainPath = mainPathOf(ids, preds, succs, layer);
 
   const byLayer = new Map<number, string[]>();
   for (const id of ids) {
@@ -115,24 +117,80 @@ export function buildGraph(snapshot: Snapshot, now: number): Graph {
   columns.forEach((column, c) => column.forEach(id => columnOf.set(id, c)));
   orderByBarycenter(columns, columnOf, preds);
 
-  const tallest = Math.max(...columns.map(column => column.length));
-  const rowStep = NODE_HEIGHT + ROW_GAP;
+  const numLayers = columns.length;
+  const maxNodesInLayer = Math.max(1, ...columns.map(col => col.length));
+  const layerStepY = NODE_HEIGHT + LAYER_V_GAP;
+  const nodeStepX = NODE_WIDTH + SIBLING_H_GAP;
+
+  const totalWidth = PADDING * 2 + maxNodesInLayer * nodeStepX - SIBLING_H_GAP;
+  const totalHeight = PADDING * 2 + numLayers * layerStepY - LAYER_V_GAP;
+
   const nodes: GraphNode[] = [];
-  columns.forEach((column, c) => {
-    const offset = ((tallest - column.length) * rowStep) / 2;
+
+  // Top-down: layer = Y level (rank), siblings within layer = X positions centered horizontally
+  columns.forEach((column, l) => {
+    const layerCount = column.length;
+    const layerWidth = layerCount * nodeStepX - SIBLING_H_GAP;
+    // Center this layer's nodes horizontally across the total graph width
+    const startX = Math.max(PADDING, (totalWidth - layerWidth) / 2);
+    const y = PADDING + l * layerStepY;
+
     column.forEach((id, i) => {
       const base = info.get(id);
-      if (base) nodes.push({ ...base, layer: c, x: PADDING + c * (NODE_WIDTH + LAYER_GAP), y: PADDING + offset + i * rowStep });
+      if (base) {
+        nodes.push({
+          ...base,
+          layer: l,
+          x: startX + i * nodeStepX,
+          y,
+        });
+      }
     });
   });
+
   return {
     nodes,
     edges,
+    mainPath,
     nodeWidth: NODE_WIDTH,
     nodeHeight: NODE_HEIGHT,
-    width: PADDING * 2 + columns.length * NODE_WIDTH + (columns.length - 1) * LAYER_GAP,
-    height: PADDING * 2 + tallest * NODE_HEIGHT + (tallest - 1) * ROW_GAP,
+    width: Math.max(totalWidth, 500),
+    height: Math.max(totalHeight, 300),
   };
+}
+
+/**
+ * One route from the origin to the goal, found from the goal backwards. Each step takes the predecessor in the
+ * deepest earlier column (ties: the oldest node) among nodes the origin can reach, so it is the longest chain.
+ * Empty while the goal has no route back, for example before the board is completed.
+ */
+function mainPathOf(ids: string[], preds: Map<string, string[]>, succs: Map<string, string[]>, layer: Map<string, number>): string[] {
+  const reach = new Set<string>([ORIGIN]);
+  const queue = [ORIGIN];
+  for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+    for (const to of succs.get(next) ?? []) {
+      if (reach.has(to)) continue;
+      reach.add(to);
+      queue.push(to);
+    }
+  }
+  if (!reach.has(GOAL)) return [];
+  const order = new Map(ids.map((id, i) => [id, i]));
+  const path = [GOAL];
+  for (let node = GOAL; node !== ORIGIN; ) {
+    const at = layer.get(node) ?? 0;
+    let best: string | undefined;
+    for (const p of preds.get(node) ?? []) {
+      const depth = layer.get(p) ?? 0;
+      if (!reach.has(p) || depth >= at) continue;
+      const bestDepth = best === undefined ? -1 : (layer.get(best) ?? 0);
+      if (depth > bestDepth || (depth === bestDepth && (order.get(p) ?? 0) < (order.get(best ?? p) ?? 0))) best = p;
+    }
+    if (best === undefined) return [];
+    path.push(best);
+    node = best;
+  }
+  return path.reverse();
 }
 
 /**
