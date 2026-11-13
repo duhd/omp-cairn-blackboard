@@ -1,0 +1,298 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "cairn-search loop: Init, Bootstrap, Reason, Explore, Converge",
+    "locale": "en",
+    "output": ".archify/docs-diagrams/03-cairn-search-loop.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/duhd/omp-cairn-blackboard.git",
+      "provider": "github",
+      "revision": "72a5a5efe96fe1fde42234066dd8dde5703985b5"
+    }
+  },
+  "lanes": [
+    {
+      "id": "controller",
+      "label": "Controller agent"
+    },
+    {
+      "id": "board",
+      "label": "Board (board.ts)"
+    },
+    {
+      "id": "workers",
+      "label": "Worker subagents"
+    }
+  ],
+  "phases": [
+    {
+      "id": "setup",
+      "label": "Setup",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "reason",
+      "label": "Reason pass",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "explore",
+      "label": "Explore",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "init",
+    "bootstrap",
+    "reason",
+    "intents",
+    "claim",
+    "conclude"
+  ],
+  "nodes": [
+    {
+      "id": "init",
+      "lane": "controller",
+      "col": 0,
+      "type": "frontend",
+      "label": "board_init",
+      "sublabel": "origin + goal",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 351,
+          "end_line": 366,
+          "label": "init()"
+        }
+      ]
+    },
+    {
+      "id": "bootstrap",
+      "lane": "controller",
+      "col": 1,
+      "type": "backend",
+      "label": "Bootstrap",
+      "sublabel": "try directly",
+      "tag": "fact_claim",
+      "sources": [
+        {
+          "path": "skills/cairn-search/SKILL.md",
+          "line": 32,
+          "end_line": 32,
+          "label": "Step 2"
+        }
+      ]
+    },
+    {
+      "id": "reason",
+      "lane": "controller",
+      "col": 2,
+      "type": "backend",
+      "label": "reason_claim",
+      "sublabel": "take Reason lease",
+      "tag": "returns board summary",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 496,
+          "end_line": 518,
+          "label": "reasonClaim()"
+        }
+      ]
+    },
+    {
+      "id": "intents",
+      "lane": "controller",
+      "col": 3,
+      "type": "backend",
+      "label": "intent_create",
+      "sublabel": "max 2 per pass",
+      "tag": "needs reason_token",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 609,
+          "end_line": 644,
+          "label": "createIntent()"
+        }
+      ]
+    },
+    {
+      "id": "export",
+      "lane": "board",
+      "col": 2,
+      "type": "database",
+      "label": "board_export",
+      "sublabel": "json | timeline | summary",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 902,
+          "end_line": 911,
+          "label": "export()"
+        }
+      ]
+    },
+    {
+      "id": "state",
+      "lane": "board",
+      "col": 3,
+      "type": "database",
+      "label": "open intents",
+      "sublabel": "status = open",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 629,
+          "end_line": 635,
+          "label": "INSERT intents"
+        }
+      ]
+    },
+    {
+      "id": "claim",
+      "lane": "workers",
+      "col": 4,
+      "type": "messagebus",
+      "label": "intent_claim",
+      "sublabel": "returns lease_token",
+      "tag": "one task per intent",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 696,
+          "end_line": 752,
+          "label": "claimIntent()"
+        }
+      ]
+    },
+    {
+      "id": "conclude",
+      "lane": "workers",
+      "col": 5,
+      "type": "security",
+      "label": "intent_conclude",
+      "sublabel": "fact + evidence",
+      "tag": "CAS on token",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 780,
+          "end_line": 807,
+          "label": "concludeIntent()"
+        }
+      ]
+    },
+    {
+      "id": "converge",
+      "lane": "controller",
+      "col": 5,
+      "type": "backend",
+      "label": "board_complete",
+      "sublabel": "goal reached",
+      "icon": "flag",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 830,
+          "end_line": 856,
+          "label": "complete()"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "init-bootstrap",
+      "from": "init",
+      "to": "bootstrap",
+      "role": "main"
+    },
+    {
+      "id": "bootstrap-reason",
+      "from": "bootstrap",
+      "to": "reason",
+      "label": "not solved",
+      "role": "main"
+    },
+    {
+      "id": "reason-intents",
+      "from": "reason",
+      "to": "intents",
+      "role": "main",
+      "label": "new directions"
+    },
+    {
+      "id": "reason-export",
+      "from": "reason",
+      "to": "export",
+      "label": "read graph",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "intents-state",
+      "from": "intents",
+      "to": "state",
+      "label": "insert",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "intents-claim",
+      "from": "intents",
+      "to": "claim",
+      "label": "spawn task",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "claim-conclude",
+      "from": "claim",
+      "to": "conclude",
+      "label": "work + heartbeat",
+      "role": "main"
+    },
+    {
+      "id": "conclude-converge",
+      "from": "conclude",
+      "to": "converge",
+      "label": "goal met",
+      "role": "return",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Controller decides",
+      "items": [
+        "Reads the graph, declares at most 2 intents per pass",
+        "Does not pre-slice a fixed plan"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Workers return one fact",
+      "items": [
+        "Every intent concludes with exactly one fact and required evidence",
+        "A lost lease creates no fact"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Repeat",
+      "items": [
+        "Reason and Explore loop until board_complete",
+        "board_complete also releases the Reason lease"
+      ]
+    }
+  ]
+}

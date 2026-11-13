@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "/fact-board viewer: from SQLite rows to the page",
+    "locale": "en",
+    "output": ".archify/docs-diagrams/09-viewer-dataflow.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/duhd/omp-cairn-blackboard.git",
+      "provider": "github",
+      "revision": "72a5a5efe96fe1fde42234066dd8dde5703985b5"
+    }
+  },
+  "stages": [
+    {
+      "label": "Store"
+    },
+    {
+      "label": "Read"
+    },
+    {
+      "label": "Shape"
+    },
+    {
+      "label": "Serve"
+    },
+    {
+      "label": "Render"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "files",
+      "type": "database",
+      "label": "Board files",
+      "sublabel": "default + fact-boards/*.db",
+      "stage": 0,
+      "row": 1,
+      "tag": "WAL",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 218,
+          "end_line": 238,
+          "label": "paths"
+        }
+      ]
+    },
+    {
+      "id": "ro",
+      "type": "backend",
+      "label": "readSnapshot",
+      "sublabel": "read-only connection",
+      "stage": 1,
+      "row": 1,
+      "tag": "no lease_token",
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 948,
+          "end_line": 1010,
+          "label": "snapshotFrom"
+        }
+      ]
+    },
+    {
+      "id": "list",
+      "type": "backend",
+      "label": "listBoards",
+      "sublabel": "picker + status",
+      "stage": 1,
+      "row": 2,
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 1034,
+          "label": "listBoards"
+        }
+      ]
+    },
+    {
+      "id": "payload",
+      "type": "backend",
+      "label": "boardPayload",
+      "sublabel": "newest 500 each",
+      "stage": 2,
+      "row": 1,
+      "tag": "truncated flag",
+      "sources": [
+        {
+          "path": "src/viewer.ts",
+          "line": 150,
+          "end_line": 190,
+          "label": "boardPayload"
+        }
+      ]
+    },
+    {
+      "id": "graph",
+      "type": "backend",
+      "label": "buildGraph",
+      "sublabel": "layers + barycenter",
+      "stage": 2,
+      "row": 0,
+      "tag": "pure",
+      "sources": [
+        {
+          "path": "src/graph.ts",
+          "line": 52,
+          "label": "buildGraph"
+        }
+      ]
+    },
+    {
+      "id": "server",
+      "type": "cloud",
+      "label": "Bun.serve",
+      "sublabel": "127.0.0.1, GET/HEAD",
+      "stage": 3,
+      "row": 1,
+      "tag": "CSP + Host check",
+      "sources": [
+        {
+          "path": "src/viewer.ts",
+          "line": 1235,
+          "end_line": 1258,
+          "label": "startViewer"
+        }
+      ]
+    },
+    {
+      "id": "page",
+      "type": "frontend",
+      "label": "List + Graph tabs",
+      "sublabel": "polls every 2 s",
+      "stage": 4,
+      "row": 1,
+      "tag": "textContent only",
+      "sources": [
+        {
+          "path": "src/viewer.ts",
+          "line": 1147,
+          "end_line": 1152,
+          "label": "poll"
+        }
+      ]
+    },
+    {
+      "id": "usage",
+      "type": "backend",
+      "label": "Usage totals",
+      "sublabel": "aggregateSessionUsage",
+      "stage": 3,
+      "row": 2,
+      "sources": [
+        {
+          "path": "src/viewer.ts",
+          "line": 37,
+          "label": "aggregateSessionUsage"
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "rows",
+      "from": "files",
+      "to": "ro",
+      "label": "rows",
+      "classification": "read-only",
+      "variant": "emphasis"
+    },
+    {
+      "id": "summaries",
+      "from": "files",
+      "to": "list",
+      "label": "status per board",
+      "classification": "read-only",
+      "variant": "default"
+    },
+    {
+      "id": "snapshot",
+      "from": "ro",
+      "to": "payload",
+      "label": "Snapshot",
+      "classification": "no secrets",
+      "variant": "emphasis"
+    },
+    {
+      "id": "boards",
+      "from": "list",
+      "to": "payload",
+      "label": "picker rows",
+      "classification": "metadata",
+      "variant": "default"
+    },
+    {
+      "id": "layout",
+      "from": "payload",
+      "to": "graph",
+      "label": "nodes + edges",
+      "classification": "derived",
+      "variant": "dashed"
+    },
+    {
+      "id": "api-board",
+      "from": "payload",
+      "to": "server",
+      "label": "GET /api/board",
+      "classification": "JSON",
+      "variant": "emphasis"
+    },
+    {
+      "id": "layout-back",
+      "from": "graph",
+      "to": "server",
+      "label": "graph layout",
+      "classification": "derived",
+      "variant": "dashed"
+    },
+    {
+      "id": "telemetry",
+      "from": "usage",
+      "to": "server",
+      "label": "GET /api/telemetry",
+      "classification": "usage",
+      "variant": "default"
+    },
+    {
+      "id": "html",
+      "from": "server",
+      "to": "page",
+      "label": "page + JSON",
+      "classification": "CSP hash",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Read-only by construction",
+      "items": [
+        "Opened with readonly: true; only GET/HEAD answered",
+        "Lease tokens are never in any SELECT"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Bounded work",
+      "items": [
+        "Each poll reads at most 500 facts, intents and hints",
+        "Older nodes are flagged as partial, not hidden silently"
+      ]
+    }
+  ]
+}

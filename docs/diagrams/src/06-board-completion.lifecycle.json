@@ -1,0 +1,42 @@
+{
+  "schema_version": 3,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Board lifecycle: init, work, complete, reopen",
+    "locale": "en",
+    "output": ".archify/docs-diagrams/06-board-completion.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/duhd/omp-cairn-blackboard.git",
+      "provider": "github",
+      "revision": "72a5a5efe96fe1fde42234066dd8dde5703985b5"
+    }
+  },
+  "mainPath": ["new", "active", "completed"],
+  "states": [
+    { "id": "new", "type": "start", "label": "Uninitialized", "sublabel": "file may not exist", "tag": "no origin/goal", "step": "01", "sources": [{ "path": "src/board.ts", "line": 344, "end_line": 348, "label": "requireInit()" }] },
+    { "id": "active", "type": "active", "label": "Active", "sublabel": "facts, intents, hints", "tag": "status=active", "step": "02", "sources": [{ "path": "src/board.ts", "line": 351, "end_line": 366, "label": "init()" }] },
+    { "id": "completed", "type": "success", "label": "Completed", "sublabel": "goal intent recorded", "tag": "status=completed", "step": "03", "icon": "flag", "sources": [{ "path": "src/board.ts", "line": 830, "end_line": 856, "label": "complete()" }] },
+    { "id": "refused", "type": "failure", "label": "Write refused", "sublabel": "board_completed", "tag": "recovery hint", "sources": [{ "path": "src/board.ts", "line": 335, "end_line": 342, "label": "assertActive()" }] },
+    { "id": "mismatch", "type": "failure", "label": "Init refused", "sublabel": "different origin/goal", "tag": "use another project", "sources": [{ "path": "src/board.ts", "line": 356, "end_line": 359, "label": "init() guard" }] }
+  ],
+  "transitions": [
+    { "id": "new-active", "from": "new", "to": "active", "label": "board_init", "variant": "emphasis" },
+    { "id": "active-completed", "from": "active", "to": "completed", "label": "board_complete", "note": "reports unfinished intents; releases Reason lease", "variant": "emphasis" },
+    { "id": "completed-active", "from": "completed", "to": "active", "label": "board_reopen", "note": "reason recorded as a fact", "variant": "dashed" },
+    { "id": "completed-refused", "from": "completed", "to": "refused", "label": "fact_claim / claim / create", "variant": "security" },
+    { "id": "active-mismatch", "from": "active", "to": "mismatch", "label": "board_init (different)", "variant": "security" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Completion is a graph edge",
+      "items": ["A concluded intent with to_fact_id = goal marks the end", "Open intents do not block it; they are listed as unfinished"]
+    },
+    {
+      "dot": "amber",
+      "title": "Reopen is attributed",
+      "items": ["The reopen reason becomes a fact", "The completion intent then points at that fact"]
+    }
+  ]
+}

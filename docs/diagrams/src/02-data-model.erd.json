@@ -1,0 +1,332 @@
+{
+  "schema_version": 1,
+  "diagram_type": "erd",
+  "meta": {
+    "title": "Board data model (one SQLite file per board)",
+    "locale": "en",
+    "output": ".archify/docs-diagrams/02-data-model.html",
+    "quality_profile": "standard",
+    "repository": {
+      "url": "https://github.com/duhd/omp-cairn-blackboard.git",
+      "provider": "github",
+      "revision": "72a5a5efe96fe1fde42234066dd8dde5703985b5"
+    }
+  },
+  "layout": {
+    "mode": "grid",
+    "gapX": 80,
+    "gapY": 44
+  },
+  "entities": [
+    {
+      "id": "facts",
+      "label": "facts",
+      "tag": "nodes",
+      "row": 0,
+      "col": 0,
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 153,
+          "end_line": 160
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "TEXT f_sha1",
+          "key": "pk"
+        },
+        {
+          "name": "text",
+          "type": "TEXT",
+          "key": "uk"
+        },
+        {
+          "name": "status",
+          "type": "TEXT claimed|disputed"
+        },
+        {
+          "name": "claimed_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "evidence",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_at",
+          "type": "INTEGER"
+        }
+      ],
+      "width": 250
+    },
+    {
+      "id": "intents",
+      "label": "intents",
+      "tag": "nodes",
+      "row": 1,
+      "col": 0,
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 161,
+          "end_line": 172
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "TEXT uuid",
+          "key": "pk"
+        },
+        {
+          "name": "description",
+          "type": "TEXT"
+        },
+        {
+          "name": "status",
+          "type": "TEXT open|claimed|concluded"
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "claimed_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "lease_token",
+          "type": "TEXT secret"
+        },
+        {
+          "name": "heartbeat_at",
+          "type": "INTEGER"
+        },
+        {
+          "name": "to_fact_id",
+          "type": "TEXT fact|goal",
+          "key": "fk",
+          "references": "facts.id"
+        },
+        {
+          "name": "created_at",
+          "type": "INTEGER"
+        },
+        {
+          "name": "updated_at",
+          "type": "INTEGER"
+        }
+      ],
+      "width": 280
+    },
+    {
+      "id": "intent_sources",
+      "label": "intent_sources",
+      "tag": "edges",
+      "row": 1,
+      "col": 1,
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 173,
+          "end_line": 177
+        }
+      ],
+      "attributes": [
+        {
+          "name": "intent_id",
+          "type": "TEXT",
+          "key": [
+            "pk",
+            "fk"
+          ],
+          "references": "intents.id"
+        },
+        {
+          "name": "fact_id",
+          "type": "TEXT fact|origin",
+          "key": [
+            "pk",
+            "fk"
+          ],
+          "references": "facts.id"
+        }
+      ],
+      "width": 250
+    },
+    {
+      "id": "fact_sources",
+      "label": "fact_sources",
+      "tag": "edges",
+      "row": 0,
+      "col": 1,
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 178,
+          "end_line": 182
+        }
+      ],
+      "attributes": [
+        {
+          "name": "fact_id",
+          "type": "TEXT",
+          "key": [
+            "pk",
+            "fk"
+          ],
+          "references": "facts.id"
+        },
+        {
+          "name": "source_id",
+          "type": "TEXT fact|origin",
+          "key": [
+            "pk",
+            "fk"
+          ],
+          "references": "facts.id"
+        }
+      ],
+      "width": 250
+    },
+    {
+      "id": "anchors",
+      "label": "anchors",
+      "tag": "context",
+      "row": 1,
+      "col": 2,
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 183,
+          "end_line": 187
+        }
+      ],
+      "attributes": [
+        {
+          "name": "node_id",
+          "type": "TEXT fact|intent",
+          "key": "pk"
+        },
+        {
+          "name": "target",
+          "type": "TEXT file path",
+          "key": "pk"
+        }
+      ],
+      "width": 250
+    },
+    {
+      "id": "hints",
+      "label": "hints",
+      "tag": "context",
+      "row": 0,
+      "col": 2,
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 188,
+          "end_line": 192
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "key": "pk"
+        },
+        {
+          "name": "content",
+          "type": "TEXT steering"
+        },
+        {
+          "name": "created_at",
+          "type": "INTEGER"
+        }
+      ],
+      "width": 250
+    },
+    {
+      "id": "meta",
+      "label": "meta",
+      "tag": "context",
+      "row": 2,
+      "col": 2,
+      "sources": [
+        {
+          "path": "src/board.ts",
+          "line": 193,
+          "end_line": 196
+        }
+      ],
+      "attributes": [
+        {
+          "name": "key",
+          "type": "TEXT origin|goal|status|reason_*",
+          "key": "pk"
+        },
+        {
+          "name": "value",
+          "type": "TEXT"
+        }
+      ],
+      "width": 290
+    }
+  ],
+  "relationships": [
+    {
+      "id": "intent_produces_fact",
+      "from": "intents",
+      "to": "facts",
+      "label": "to_fact_id",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "toOptional": true
+    },
+    {
+      "id": "source_of_intent",
+      "from": "intent_sources",
+      "to": "intents",
+      "label": "intent_id",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "source_fact",
+      "from": "intent_sources",
+      "to": "facts",
+      "label": "fact_id",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "fact_cites_fact",
+      "from": "fact_sources",
+      "to": "facts",
+      "label": "fact_id",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Graph edges",
+      "items": [
+        "intent_sources: fact to intent",
+        "intents.to_fact_id: intent to fact (or goal)",
+        "fact_sources: fact to fact for direct claims"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Dedup + leases",
+      "items": [
+        "facts.id is a hash of the stored text, so repeats collapse",
+        "Leases are columns on intents; the Reason lease lives in meta"
+      ]
+    }
+  ]
+}

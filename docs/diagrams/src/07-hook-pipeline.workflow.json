@@ -1,0 +1,63 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "tool_call hook pipeline: gate, heartbeat, nudge, dispatch",
+    "locale": "en",
+    "output": ".archify/docs-diagrams/07-hook-pipeline.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/duhd/omp-cairn-blackboard.git",
+      "provider": "github",
+      "revision": "72a5a5efe96fe1fde42234066dd8dde5703985b5"
+    }
+  },
+  "lanes": [
+    { "id": "hook", "label": "tool_call handler" },
+    { "id": "state", "label": "Board + session state" },
+    { "id": "advice", "label": "Messages to main session", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "inspect", "label": "Inspect call", "fromCol": 0, "toCol": 1 },
+    { "id": "maintain", "label": "Maintain board", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "advise", "label": "Advise", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["call", "gate", "record", "heartbeat", "nudge", "dispatch"],
+  "nodes": [
+    { "id": "call", "lane": "hook", "col": 0, "type": "external", "label": "Tool call", "sublabel": "bash, write xd://..., read", "tag": "normalized", "sources": [{ "path": "src/index.ts", "line": 475, "end_line": 483, "label": "normalize xd://" }] },
+    { "id": "gate", "lane": "hook", "col": 1, "type": "security", "label": "Mutating gate", "sublabel": "helm, kubectl, git push main", "tag": "regex", "sources": [{ "path": "src/index.ts", "line": 484, "end_line": 515, "label": "gate" }] },
+    { "id": "record", "lane": "hook", "col": 2, "type": "backend", "label": "recordToolUse", "sublabel": "project + worker names", "sources": [{ "path": "src/index.ts", "line": 517, "end_line": 517, "label": "record" }] },
+    { "id": "heartbeat", "lane": "hook", "col": 3, "type": "backend", "label": "Auto heartbeat + anchor", "sublabel": "owned intents, file path", "sources": [{ "path": "src/index.ts", "line": 518, "end_line": 536, "label": "heartbeat" }] },
+    { "id": "nudge", "lane": "hook", "col": 4, "type": "backend", "label": "nudgeOnCall", "sublabel": "24 calls without a write", "tag": "main only", "sources": [{ "path": "src/session-boards.ts", "line": 80, "end_line": 95, "label": "nudgeOnCall" }] },
+    { "id": "dispatch", "lane": "hook", "col": 5, "type": "backend", "label": "dispatchFor", "sublabel": "at most every 30 s", "tag": "reads disk", "sources": [{ "path": "src/index.ts", "line": 79, "end_line": 109, "label": "dispatchFor" }] },
+    { "id": "boards", "lane": "state", "col": 3, "type": "database", "label": "Board files", "sublabel": "claimed intents, anchors", "sources": [{ "path": "src/board.ts", "line": 660, "end_line": 670, "label": "refreshOwnedHeartbeat" }] },
+    { "id": "checkpoint", "lane": "state", "col": 5, "type": "database", "label": "Checkpoints", "sublabel": "facts, hints, live, announced", "sources": [{ "path": "src/dispatch.ts", "line": 54, "end_line": 86, "label": "dispatchAdvice" }] },
+    { "id": "warn", "lane": "advice", "col": 1, "type": "messagebus", "label": "cairn-gate-warning", "sublabel": "no claimed intent", "sources": [{ "path": "src/index.ts", "line": 502, "end_line": 513, "label": "sendMessage" }] },
+    { "id": "nudgeMsg", "lane": "advice", "col": 4, "type": "messagebus", "label": "cairn-nudge", "sublabel": "max 3, 10 min apart", "sources": [{ "path": "src/session-boards.ts", "line": 61, "end_line": 65, "label": "limits" }] },
+    { "id": "dispatchMsg", "lane": "advice", "col": 5, "type": "messagebus", "label": "cairn-dispatch", "sublabel": "Explore or Reason", "sources": [{ "path": "src/index.ts", "line": 545, "end_line": 549, "label": "dispatch send" }] }
+  ],
+  "edges": [
+    { "id": "call-gate", "from": "call", "to": "gate", "role": "main" },
+    { "id": "gate-record", "from": "gate", "to": "record", "label": "continue", "role": "main" },
+    { "id": "record-heartbeat", "from": "record", "to": "heartbeat", "role": "main" },
+    { "id": "heartbeat-nudge", "from": "heartbeat", "to": "nudge", "label": "main session", "role": "main" },
+    { "id": "nudge-dispatch", "from": "nudge", "to": "dispatch", "label": "not a board write", "role": "main" },
+    { "id": "gate-warn", "from": "gate", "to": "warn", "label": "mutating, no claim", "variant": "security", "role": "error" },
+    { "id": "heartbeat-boards", "from": "heartbeat", "to": "boards", "label": "UPDATE", "variant": "dashed", "role": "branch" },
+    { "id": "nudge-msg", "from": "nudge", "to": "nudgeMsg", "label": "threshold hit", "variant": "dashed", "role": "async" },
+    { "id": "dispatch-msg", "from": "dispatch", "to": "dispatchMsg", "label": "graph changed", "variant": "dashed", "role": "async" },
+    { "id": "dispatch-checkpoint", "from": "dispatch", "to": "checkpoint", "label": "compare", "variant": "dashed", "role": "branch" }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Never blocks",
+      "items": ["Advice and reminders are optional; handlers swallow board read errors", "A throwing tool_call handler would block the agent, so none escape"]
+    },
+    {
+      "dot": "cyan",
+      "title": "Dispatcher triggers",
+      "items": ["Unclaimed open intents: staff one task each", "More facts or hints, or last intent concluded: Reason pass", "Waits while any worker still holds an intent"]
+    }
+  ]
+}
