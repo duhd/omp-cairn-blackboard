@@ -515,20 +515,23 @@ export default function blackboard(pi: ExtensionAPI): void {
     }
 
     recordToolUse(shared.sessions, sessionId, normalizedTool, normalizedInput);
-    // Auto-anchor: infer target file path from tool calls (read, edit, write, bash)
-    if (targetPath && !isXd && !targetPath.startsWith("xd://") && !targetPath.startsWith("http")) {
-      const activeProjects = shared.sessions.get(sessionId);
-      if (activeProjects) {
-        for (const p of activeProjects.keys()) {
-          try {
-            const board = boardFor(p);
-            const lease = board.info();
-            if (lease.status === "active") {
+    // Auto-anchor and Auto-heartbeat: refresh lease heartbeat for owned workers and infer target file path from tool calls
+    const activeProjects = shared.sessions.get(sessionId);
+    if (activeProjects) {
+      for (const [p, workers] of activeProjects.entries()) {
+        try {
+          const board = boardFor(p);
+          const lease = board.info();
+          if (lease.status === "active") {
+            for (const worker of workers) {
+              board.refreshOwnedHeartbeat(worker);
+            }
+            if (targetPath && !isXd && !targetPath.startsWith("xd://") && !targetPath.startsWith("http")) {
               const claimedId = board.activeClaimedIntentId();
               if (claimedId) board.addAnchor(claimedId, targetPath);
             }
-          } catch {}
-        }
+          }
+        } catch {}
       }
     }
     // Only the main session is nudged: a subagent's reply goes to its parent, not to a person who can act on it.

@@ -657,6 +657,18 @@ export class Board {
     const row = this.db.query<{ id: string }, []>("SELECT id FROM intents WHERE status = 'claimed' ORDER BY heartbeat_at DESC LIMIT 1").get();
     return row ? row.id : null;
   }
+  refreshOwnedHeartbeat(worker: string, id?: string): boolean {
+    if (!worker) return false;
+    const now = this.now();
+    const cutoff = now - Math.floor(this.leaseMs / 3);
+    const query = id
+      ? "UPDATE intents SET heartbeat_at = ?, updated_at = ? WHERE id = ? AND status = 'claimed' AND claimed_by = ? AND (heartbeat_at IS NULL OR heartbeat_at < ?)"
+      : "UPDATE intents SET heartbeat_at = ?, updated_at = ? WHERE status = 'claimed' AND claimed_by = ? AND (heartbeat_at IS NULL OR heartbeat_at < ?)";
+    const params = id ? [now, now, this.resolveIntentId(id), worker, cutoff] : [now, now, worker, cutoff];
+    const { changes } = this.db.query(query).run(...(params as [number, number, string, string, number]));
+    return changes > 0;
+  }
+
 
   private sourceFacts(ids: readonly string[]): FactRow[] {
     const info = this.info();

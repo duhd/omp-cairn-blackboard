@@ -1024,6 +1024,27 @@ describe("Tier 1 improvements: safe prefix resolution & provenance", () => {
     // Must be attributed to controller, NOT subagent-worker-42 and NOT "unknown"
     expect(fact.claimed_by).toBe("controller");
   });
+  test("refreshOwnedHeartbeat only extends heartbeat of claimed intents owned by the specified worker", () => {
+    const { board, reason_token } = started();
+    const i1 = board.createIntent({ description: "task 1", from: ["origin"], reasonToken: reason_token });
+    const i2 = board.createIntent({ description: "task 2", from: ["origin"], reasonToken: reason_token });
+    board.claimIntent(i1.id, "worker-alpha");
+    board.claimIntent(i2.id, "worker-beta");
+
+    // Refresh owned by alpha should not affect beta
+    expect(board.refreshOwnedHeartbeat("worker-alpha")).toBe(false); // throttled because heartbeat is fresh (< leaseMs/3 old)
+
+    // Manually age the heartbeat
+    (board as unknown as { db: { query: (sql: string) => { run: (...args: unknown[]) => void } } }).db
+      .query("UPDATE intents SET heartbeat_at = ? WHERE id = ?")
+      .run(Date.now() - 400_000, i1.id);
+
+    // Now worker-alpha can refresh its aged heartbeat
+    expect(board.refreshOwnedHeartbeat("worker-alpha")).toBe(true);
+    // Calling for another worker does not refresh beta if beta is fresh
+    expect(board.refreshOwnedHeartbeat("worker-other")).toBe(false);
+  });
+
 });
 
 describe("Tier 2 improvements: security redaction & completion invariants", () => {
