@@ -412,4 +412,31 @@ test("tool_call hook warns when mutating command runs without active claimed int
   );
   expect(nudges.some(n => n.includes("mutating gate warning"))).toBe(true);
 });
+test("tool_call hook auto-refreshes heartbeat for session-owned claimed workers when aged", async () => {
+  process.env.FACT_BOARD_DB = join(dir, "auto-heartbeat-board.db");
+  const { toolCall, tools } = await loadInstance("auto-hb");
+  await tools.board_init.execute("hb1", { origin: "o", goal: "g", project: "hb-p" });
+  const { reason_token } = JSON.parse((await tools.reason_claim.execute("hb2", { worker: "ctrl", project: "hb-p" })).content[0].text);
+  const intentObj = JSON.parse((await tools.intent_create.execute("hb3", { text: "hb task", reason_token, project: "hb-p" })).content[0].text);
+
+  // Claim as worker-hb in session-hb
+  await tools.intent_claim.execute("hb4", { intent_id: intentObj.id, worker: "worker-hb", project: "hb-p" });
+  // Register worker-hb in session state
+  toolCall({ toolName: "intent_claim", input: { id: intentObj.id, worker: "worker-hb", project: "hb-p" } }, sessionOf("session-hb"));
+
+  const db = (await import("../src/board")).Board ? new (await import("../src/board")).Board((await import("../src/board")).projectDbPath(process.env.FACT_BOARD_DB, "hb-p")) : null;
+  const rawDb = (db as unknown as { db: { query: <T, P extends unknown[]>(sql: string) => { run: (...args: unknown[]) => void; get: (...args: unknown[]) => T } } }).db;
+
+  // Manually age the heartbeat
+  const oldTime = Date.now() - 400_000;
+  rawDb.query("UPDATE intents SET heartbeat_at = ? WHERE id = ?").run(oldTime, intentObj.id);
+
+  // Running a tool call in session-hb should auto-refresh heartbeat
+  toolCall({ toolName: "bash", input: { command: "echo monitoring" } }, sessionOf("session-hb"));
+
+  const afterRow = rawDb.query<{ heartbeat_at: number }, [string]>("SELECT heartbeat_at FROM intents WHERE id = ?").get(intentObj.id);
+  expect(afterRow.heartbeat_at).toBeGreaterThan(oldTime);
+  db?.close();
+});
+
 
